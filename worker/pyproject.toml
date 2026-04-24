@@ -8,5 +8,5 @@ dependencies = [
   "resend>=2.7.0",
 ]
 
-[tool.uv]
-dev-dependencies = []
+[dependency-groups]
+dev = []

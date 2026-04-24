@@ -55,7 +55,7 @@ def send_alert(symbol: str, price: float, min_price: float) -> None:
 def run() -> None:
     db = supabase()
 
-    watchlist = db.table("watchlist").select("*").execute().data
+    watchlist = db.from_("watchlist").select("*").execute().data
     if not watchlist:
         print("Watchlist empty — nothing to do.")
         return
@@ -70,7 +70,7 @@ def run() -> None:
 
     # Batch insert ticks
     ticks = [{"symbol": s, "price": p, "fetched_at": now} for s, p in prices.items()]
-    db.table("price_ticks").insert(ticks).execute()
+    db.from_("price_ticks").insert(ticks).execute()
     print(f"Inserted {len(ticks)} ticks.")
 
     # Check thresholds
@@ -90,14 +90,14 @@ def run() -> None:
                 send_alert(symbol, price, min_price)
 
                 # Insert alert log
-                db.table("alert_log").insert({
+                db.from_("alert_log").insert({
                     "symbol": symbol, "price": price, "min_price": min_price
                 }).execute()
 
                 # Set 1-hour cooldown
                 from datetime import timedelta
                 new_cooldown = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
-                db.table("watchlist").update(
+                db.from_("watchlist").update(
                     {"alert_cooldown_until": new_cooldown}
                 ).eq("symbol", symbol).execute()
             else:
