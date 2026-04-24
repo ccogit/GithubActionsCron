@@ -1,0 +1,12 @@
+[project]
+name = "stock-watcher-worker"
+version = "0.1.0"
+requires-python = ">=3.13"
+dependencies = [
+  "finnhub-python>=2.4.20",
+  "supabase>=2.15.0",
+  "resend>=2.7.0",
+]
+
+[tool.uv]
+dev-dependencies = []
