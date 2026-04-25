@@ -7,6 +7,7 @@ import { AddStockForms } from "@/components/AddStockForms";
 import { AlertsTable } from "@/components/AlertsTable";
 import { MarketAggregates } from "@/components/MarketAggregates";
 import { MarketTable } from "@/components/MarketTable";
+import { PoliticianTrades } from "@/components/PoliticianTrades";
 import type { WatchlistRow, PriceTick, AlertLogRow } from "@/lib/types";
 import type { Holding } from "@/components/StocksTable";
 
@@ -92,7 +93,15 @@ export default async function StocksPage() {
         </CollapsibleSection>
 
         <CollapsibleSection title="Market Overview" defaultOpen={true}>
-          <MarketAggregates />
+          <div className="space-y-8">
+            <MarketAggregates />
+            <div className="border-t border-white/10 pt-8">
+              <h3 className="text-sm font-semibold text-muted-foreground mb-4 uppercase tracking-wide">
+                Capitol Trends
+              </h3>
+              <PoliticianTrades />
+            </div>
+          </div>
         </CollapsibleSection>
 
         <CollapsibleSection title="Explore">
