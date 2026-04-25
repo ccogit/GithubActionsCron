@@ -22,7 +22,9 @@
       "Bash(python *)",
       "Bash(curl -s \"https://raw.githubusercontent.com/ccogit/GithubActionsCron/main/worker/refresh_analyst_cache.py\")",
       "Bash(curl -s \"https://api.github.com/repos/ccogit/GithubActionsCron/actions/workflows/266281709/runs?per_page=3\")",
-      "WebFetch(domain:finnhub.io)"
+      "WebFetch(domain:finnhub.io)",
+      "WebFetch(domain:site.financialmodelingprep.com)",
+      "Bash(pip install *)"
     ]
   }
 }

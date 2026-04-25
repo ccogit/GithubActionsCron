@@ -15,7 +15,6 @@ from supabase import create_client
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_ROLE = os.environ["SUPABASE_SERVICE_ROLE"]
-FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY", "")
 
 YAHOO_HEADERS = {
     "User-Agent": (
@@ -73,60 +72,11 @@ def get_crumb(session: requests.Session) -> Optional[str]:
     return None
 
 
-def get_finnhub_analyst_data(symbol: str) -> Optional[dict]:
-    """Fetch analyst data from Finnhub (primarily for German stocks)."""
-    if not FINNHUB_API_KEY:
-        return None
-
-    try:
-        # Get recommendation trends (buy/hold/sell counts)
-        url = f"https://finnhub.io/api/v1/recommendation?symbol={symbol}&token={FINNHUB_API_KEY}"
-        r = requests.get(url, timeout=10)
-        if r.ok:
-            data = r.json()
-            if isinstance(data, list) and len(data) > 0:
-                rec = data[0]
-                # Calculate consensus: more buys than sells = bullish, etc.
-                buy_count = rec.get("buy", 0)
-                hold_count = rec.get("hold", 0)
-                sell_count = rec.get("sell", 0)
-                strong_buy = rec.get("strongBuy", 0)
-                strong_sell = rec.get("strongSell", 0)
-
-                total = buy_count + hold_count + sell_count + strong_buy + strong_sell
-                if total > 0:
-                    # Calculate implied target as average of buy/strong_buy ratio
-                    # Since Finnhub free tier doesn't include price targets,
-                    # we return the analyst count and sentiment
-                    return {
-                        "n_analysts": total,
-                        "sentiment": {
-                            "strongBuy": strong_buy,
-                            "buy": buy_count,
-                            "hold": hold_count,
-                            "sell": sell_count,
-                            "strongSell": strong_sell,
-                        },
-                    }
-    except Exception as e:
-        print(f"  Finnhub failed for {symbol}: {e}", file=sys.stderr)
-
-    return None
-
-
 def get_analyst_target(
     session: requests.Session, symbol: str, crumb: Optional[str]
 ) -> Optional[dict]:
-    """Fetch analyst target price from Yahoo Finance (US) or Finnhub (German stocks)."""
+    """Fetch analyst target price from Yahoo Finance (works for both US and German stocks)."""
     clean_symbol = symbol  # Yahoo accepts .DE suffix directly
-
-    # For German stocks (.DE), try Finnhub first
-    if symbol.endswith(".DE"):
-        finnhub_data = get_finnhub_analyst_data(symbol.replace(".DE", ""))
-        if finnhub_data and finnhub_data.get("n_analysts"):
-            return finnhub_data
-        # If Finnhub doesn't have data, fall through to Yahoo as fallback
-        time.sleep(0.3)
 
     # Try v10 quoteSummary with crumb
     if crumb:
