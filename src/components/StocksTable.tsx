@@ -1,10 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import { Trash2, Check, X, TrendingUp, TrendingDown, ArrowDownToLine } from "lucide-react";
+import { Trash2, Check, X, TrendingUp, TrendingDown, ArrowDownToLine, ShoppingCart } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { removeSymbol, updateMinPrice } from "@/app/actions";
-import { closePositionAction } from "@/app/alpaca-actions";
+import { closePositionAction, placeOrderAction } from "@/app/alpaca-actions";
 import type { WatchlistRow } from "@/lib/types";
 import type { AlpacaPosition } from "@/lib/alpaca";
 
@@ -24,8 +24,11 @@ type Props = {
 export function StocksTable({ holdings, latestPrices, changes, colors }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [buyingSymbol, setBuyingSymbol] = useState<string | null>(null);
+  const [buyQty, setBuyQty] = useState("1");
 
   function startEdit(watch: WatchlistRow) {
+    setBuyingSymbol(null);
     setEditingId(watch.id);
     setEditValue(String(watch.min_price));
   }
@@ -34,6 +37,24 @@ export function StocksTable({ holdings, latestPrices, changes, colors }: Props) 
     const val = parseFloat(editValue);
     if (!isNaN(val)) await updateMinPrice(symbol, val);
     setEditingId(null);
+  }
+
+  function startBuy(symbol: string) {
+    setEditingId(null);
+    setBuyingSymbol(symbol);
+    setBuyQty("1");
+  }
+
+  async function confirmBuy(symbol: string) {
+    const qty = parseInt(buyQty, 10);
+    if (!qty || qty < 1) return;
+    const fd = new FormData();
+    fd.set("symbol", symbol);
+    fd.set("qty", String(qty));
+    fd.set("side", "buy");
+    fd.set("type", "market");
+    await placeOrderAction(fd);
+    setBuyingSymbol(null);
   }
 
   if (holdings.length === 0) {
@@ -56,7 +77,7 @@ export function StocksTable({ holdings, latestPrices, changes, colors }: Props) 
             <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">P&amp;L</th>
             <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Alert at</th>
             <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Status</th>
-            <th className="w-20" />
+            <th className="w-36" />
           </tr>
         </thead>
         <tbody className="divide-y divide-white/4">
@@ -215,29 +236,70 @@ export function StocksTable({ holdings, latestPrices, changes, colors }: Props) 
 
                 {/* Actions (context-aware) */}
                 <td className="py-3 px-2">
-                  <div className="flex items-center justify-end gap-1 opacity-30 group-hover:opacity-100 transition-opacity">
-                    {isOwned && (
+                  {buyingSymbol === h.symbol ? (
+                    <div className="flex items-center justify-end gap-1">
+                      <Input
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={buyQty}
+                        onChange={(e) => setBuyQty(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") confirmBuy(h.symbol);
+                          if (e.key === "Escape") setBuyingSymbol(null);
+                        }}
+                        className="w-16 h-7 text-xs font-mono text-right bg-white/5 border-blue-500/30 focus:border-blue-400/60 focus:ring-blue-500/20"
+                        autoFocus
+                      />
                       <button
                         type="button"
-                        onClick={() => closePositionAction(h.symbol)}
-                        title="Sell (close position)"
-                        className="h-7 px-2 rounded-md flex items-center gap-1 text-xs font-mono font-medium text-muted-foreground hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all"
+                        onClick={() => confirmBuy(h.symbol)}
+                        className="h-7 w-7 rounded-md flex items-center justify-center text-blue-400 hover:bg-blue-500/15 transition-colors"
                       >
-                        <ArrowDownToLine className="h-3 w-3" />
-                        Sell
+                        <Check className="h-3 w-3" />
                       </button>
-                    )}
-                    {isWatch && (
                       <button
                         type="button"
-                        onClick={() => removeSymbol(h.symbol)}
-                        title="Remove from watchlist"
-                        className="h-7 w-7 rounded-md flex items-center justify-center text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                        onClick={() => setBuyingSymbol(null)}
+                        className="h-7 w-7 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/8 transition-colors"
                       >
-                        <Trash2 className="h-3.5 w-3.5" />
+                        <X className="h-3 w-3" />
                       </button>
-                    )}
-                  </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-end gap-1 opacity-30 group-hover:opacity-100 transition-opacity">
+                      <button
+                        type="button"
+                        onClick={() => startBuy(h.symbol)}
+                        title="Buy"
+                        className="h-7 px-2 rounded-md flex items-center gap-1 text-xs font-mono font-medium text-blue-400 hover:bg-blue-500/15 border border-transparent hover:border-blue-500/30 transition-all"
+                      >
+                        <ShoppingCart className="h-3 w-3" />
+                        Buy
+                      </button>
+                      {isOwned && (
+                        <button
+                          type="button"
+                          onClick={() => closePositionAction(h.symbol)}
+                          title="Sell (close position)"
+                          className="h-7 px-2 rounded-md flex items-center gap-1 text-xs font-mono font-medium text-muted-foreground hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all"
+                        >
+                          <ArrowDownToLine className="h-3 w-3" />
+                          Sell
+                        </button>
+                      )}
+                      {isWatch && (
+                        <button
+                          type="button"
+                          onClick={() => removeSymbol(h.symbol)}
+                          title="Remove from watchlist"
+                          className="h-7 w-7 rounded-md flex items-center justify-center text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </td>
               </tr>
             );
