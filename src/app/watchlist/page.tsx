@@ -3,9 +3,8 @@ import { getPositions } from "@/lib/alpaca";
 import { StocksTable, type Holding } from "@/components/StocksTable";
 import { AddStockForms } from "@/components/AddStockForms";
 import { AlertsTable } from "@/components/AlertsTable";
-import { PriceChart } from "@/components/PriceChart";
+import { StockChartPanel } from "@/components/StockChartPanel";
 import { AutoRefresh } from "@/components/AutoRefresh";
-import { TrendingUp, TrendingDown } from "lucide-react";
 import type { WatchlistRow, PriceTick, AlertLogRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -92,53 +91,24 @@ export default async function StocksPage() {
         {chartable.length > 0 && (
           <section>
             <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-4">
-              Price History · 2h
+              Price History
             </h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {chartable.map((h, i) => {
                 const color = CHART_COLORS[i % CHART_COLORS.length];
-                const change = changes[h.symbol];
                 const currentPrice =
                   latestPrices[h.symbol] ??
                   (h.position ? parseFloat(h.position.current_price) : undefined);
                 const minPrice = h.watch?.min_price ?? 0;
                 return (
-                  <div
+                  <StockChartPanel
                     key={h.symbol}
-                    className="rounded-lg border border-white/8 bg-card p-5 overflow-hidden"
-                    style={{ borderTopColor: color, borderTopWidth: "2px" }}
-                  >
-                    <div className="flex items-start justify-between mb-4">
-                      <div>
-                        <div className="font-mono font-bold text-sm tracking-widest" style={{ color }}>
-                          {h.symbol}
-                        </div>
-                        <div className="font-mono font-semibold text-2xl text-foreground mt-0.5 tabular-nums">
-                          {currentPrice !== undefined ? `$${currentPrice.toFixed(2)}` : "—"}
-                        </div>
-                      </div>
-                      {change !== null ? (
-                        <div className={`flex flex-col items-end ${change >= 0 ? "text-emerald-400" : "text-red-400"}`}>
-                          <span className="flex items-center gap-1 font-mono text-sm font-semibold tabular-nums">
-                            {change >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
-                            {change >= 0 ? "+" : ""}{change.toFixed(2)}%
-                          </span>
-                          <span className="text-xs text-muted-foreground font-mono">2h change</span>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground font-mono">No data</span>
-                      )}
-                    </div>
-                    <PriceChart ticks={ticksBySymbol[h.symbol] ?? []} symbol={h.symbol} color={color} />
-                    {minPrice > 0 && (
-                      <div className="mt-2 flex items-center gap-1.5 text-xs font-mono text-muted-foreground">
-                        <span>Alert threshold:</span>
-                        <span className={currentPrice !== undefined && currentPrice < minPrice ? "text-red-400 font-medium" : "text-foreground"}>
-                          ${minPrice.toFixed(2)}
-                        </span>
-                      </div>
-                    )}
-                  </div>
+                    symbol={h.symbol}
+                    color={color}
+                    initialTicks={ticksBySymbol[h.symbol] ?? []}
+                    currentPrice={currentPrice}
+                    minPrice={minPrice}
+                  />
                 );
               })}
             </div>

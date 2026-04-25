@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Trash2, Check, X, TrendingUp, TrendingDown } from "lucide-react";
+import { Trash2, Check, X, TrendingUp, TrendingDown, ArrowDownToLine } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { removeSymbol, updateMinPrice } from "@/app/actions";
 import { closePositionAction } from "@/app/alpaca-actions";
@@ -60,7 +60,13 @@ export function StocksTable({ holdings, latestPrices, changes, colors }: Props) 
           </tr>
         </thead>
         <tbody className="divide-y divide-white/4">
-          {holdings.map((h, i) => {
+          {[...holdings]
+            .sort((a, b) => {
+              const rank = (h: Holding) =>
+                h.watch && !h.position ? 0 : h.watch && h.position ? 1 : 2;
+              return rank(a) - rank(b);
+            })
+            .map((h, i) => {
             const color = colors[i % colors.length];
             const tickPrice = latestPrices[h.symbol];
             const fallbackPrice = h.position ? parseFloat(h.position.current_price) : undefined;
@@ -215,9 +221,10 @@ export function StocksTable({ holdings, latestPrices, changes, colors }: Props) 
                         type="button"
                         onClick={() => closePositionAction(h.symbol)}
                         title="Sell (close position)"
-                        className="h-7 w-7 rounded-md flex items-center justify-center text-muted-foreground hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                        className="h-7 px-2 rounded-md flex items-center gap-1 text-xs font-mono font-medium text-muted-foreground hover:text-red-400 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 transition-all"
                       >
-                        <X className="h-3.5 w-3.5" />
+                        <ArrowDownToLine className="h-3 w-3" />
+                        Sell
                       </button>
                     )}
                     {isWatch && (
