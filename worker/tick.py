@@ -5,6 +5,7 @@ Triggered once per minute via repository_dispatch from cron-job.org.
 
 import json
 import os
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
@@ -68,8 +69,7 @@ def alpaca_sell(symbol: str) -> None:
         "APCA-API-SECRET-KEY": ALPACA_SECRET,
     }
 
-    # Resolve available qty from open position; default to 1 if not held
-    qty = "1"
+    # Only sell if a position is actually held
     try:
         req = urllib.request.Request(
             f"{ALPACA_ENDPOINT}/positions/{symbol}",
@@ -77,11 +77,20 @@ def alpaca_sell(symbol: str) -> None:
         )
         with urllib.request.urlopen(req, timeout=10) as r:
             pos = json.loads(r.read())
-            available = pos.get("qty_available") or pos.get("qty") or "1"
-            if float(available) > 0:
-                qty = available
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            print(f"  [alpaca] no position in {symbol} — skipping sell order")
+        else:
+            print(f"  [alpaca] position lookup error HTTP {exc.code}: {exc.reason}")
+        return
     except Exception as exc:
-        print(f"  [alpaca] position lookup failed: {exc} — defaulting qty=1")
+        print(f"  [alpaca] position lookup failed: {exc} — skipping sell order")
+        return
+
+    qty = pos.get("qty_available") or pos.get("qty") or "0"
+    if float(qty) <= 0:
+        print(f"  [alpaca] {symbol} position has no available qty — skipping sell order")
+        return
 
     body = json.dumps({
         "symbol": symbol,
