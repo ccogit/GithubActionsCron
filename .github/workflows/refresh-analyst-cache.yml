@@ -19,7 +19,7 @@ jobs:
           python-version: '3.13'
 
       - name: Install dependencies
-        run: pip install requests "supabase>=2.15.0"
+        run: pip install yfinance "supabase>=2.15.0"
 
       - name: Refresh analyst cache
         env:

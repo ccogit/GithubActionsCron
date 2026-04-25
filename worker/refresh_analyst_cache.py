@@ -1,7 +1,8 @@
-"""Refresh the analyst_cache table from Yahoo Finance.
+"""Refresh the analyst_cache table using yfinance.
 
-Runs in GitHub Actions hourly. Bypasses the Vercel function timeout
-by doing the heavy lifting directly in the runner.
+Runs in GitHub Actions hourly. Uses the yfinance Python library
+which handles Yahoo Finance's anti-scraping measures properly,
+giving us much better coverage for both US and German stocks.
 """
 
 import os
@@ -10,22 +11,11 @@ import time
 from datetime import datetime, timezone
 from typing import Optional
 
-import requests
+import yfinance as yf
 from supabase import create_client
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_ROLE = os.environ["SUPABASE_SERVICE_ROLE"]
-
-YAHOO_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
-    ),
-    "Accept": "application/json, text/plain, */*",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Origin": "https://finance.yahoo.com",
-    "Referer": "https://finance.yahoo.com/",
-}
 
 # 161 symbols across Dow Jones, Nasdaq 100, DAX
 SYMBOLS = [
@@ -54,131 +44,52 @@ SYMBOLS = [
 ]
 
 
-def get_crumb(session: requests.Session) -> Optional[str]:
-    """Get Yahoo Finance crumb for authenticated requests."""
+def get_analyst_target(symbol: str) -> Optional[dict]:
+    """Fetch analyst target price from yfinance."""
     try:
-        # Initialize cookies
-        session.get("https://fc.yahoo.com", headers=YAHOO_HEADERS, timeout=10)
-        # Get crumb
-        r = session.get(
-            "https://query2.finance.yahoo.com/v1/test/getcrumb",
-            headers=YAHOO_HEADERS,
-            timeout=10,
-        )
-        if r.ok and r.text and "<" not in r.text:
-            return r.text.strip()
+        ticker = yf.Ticker(symbol)
+        info = ticker.info
+
+        target = info.get("targetMeanPrice")
+        n_analysts = info.get("numberOfAnalystOpinions")
+        current = info.get("currentPrice") or info.get("regularMarketPrice")
+
+        if target and n_analysts:
+            return {
+                "target": float(target),
+                "n_analysts": int(n_analysts),
+                "current_price": float(current) if current else None,
+            }
     except Exception as e:
-        print(f"Failed to get crumb: {e}", file=sys.stderr)
-    return None
-
-
-def get_analyst_target(
-    session: requests.Session, symbol: str, crumb: Optional[str]
-) -> Optional[dict]:
-    """Fetch analyst target price from Yahoo Finance (works for both US and German stocks)."""
-    clean_symbol = symbol  # Yahoo accepts .DE suffix directly
-
-    # Try v10 quoteSummary with crumb
-    if crumb:
-        url = (
-            f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/"
-            f"{clean_symbol}?modules=financialData&crumb={crumb}"
-        )
-        try:
-            r = session.get(url, headers=YAHOO_HEADERS, timeout=10)
-            if r.ok:
-                data = r.json()
-                fd = (
-                    data.get("quoteSummary", {})
-                    .get("result", [{}])[0]
-                    .get("financialData", {})
-                )
-                target = fd.get("targetMeanPrice", {}).get("raw")
-                n = fd.get("numberOfAnalystOpinions", {}).get("raw")
-                if target:
-                    return {"target": target, "n_analysts": n}
-        except Exception:
-            pass
-
-    # Fallback to v7 quote
-    try:
-        r = session.get(
-            f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={clean_symbol}",
-            headers=YAHOO_HEADERS,
-            timeout=10,
-        )
-        if r.ok:
-            results = r.json().get("quoteResponse", {}).get("result", [])
-            if results:
-                quote = results[0]
-                target = quote.get("targetMeanPrice")
-                n = quote.get("averageAnalystRating") and len(
-                    quote.get("averageAnalystRating", "").split()
-                )
-                if target:
-                    return {"target": target, "n_analysts": quote.get("numberOfAnalystOpinions")}
-    except Exception as e:
-        print(f"  v7 quote failed for {symbol}: {e}", file=sys.stderr)
+        print(f"  yfinance error for {symbol}: {e}", file=sys.stderr)
 
     return None
 
 
 def main() -> int:
     db = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE)
-    session = requests.Session()
-
-    print(f"Fetching crumb...")
-    crumb = get_crumb(session)
-    print(f"Crumb: {'obtained' if crumb else 'unavailable (using fallback)'}")
 
     updated = 0
     skipped_no_target = 0
     failed = 0
+    de_updated = 0
 
-    print(f"Processing {len(SYMBOLS)} symbols...")
+    print(f"Processing {len(SYMBOLS)} symbols via yfinance...")
 
     for i, symbol in enumerate(SYMBOLS):
         try:
-            result = get_analyst_target(session, symbol, crumb)
+            result = get_analyst_target(symbol)
             if not result:
                 skipped_no_target += 1
                 if i % 20 == 0:
-                    print(f"  [{i+1}/{len(SYMBOLS)}] {symbol}: no data")
-                # Polite rate-limit even on miss (we still hit provider)
-                time.sleep(0.3)
-                continue
-
-            target = result.get("target")
-            n_analysts = result.get("n_analysts")
-
-            # Skip if we don't have analyst count
-            if not n_analysts:
-                skipped_no_target += 1
-                if i % 20 == 0:
                     print(f"  [{i+1}/{len(SYMBOLS)}] {symbol}: no analyst data")
-                time.sleep(0.3)
+                time.sleep(0.2)
                 continue
 
-            # Optional: enrich with current price from price_ticks (only present
-            # for symbols in user's watchlist). The aggregator computes upside
-            # against fresh quotes, so this is informational only.
-            current_price = None
-            upside = None
-
-            # Only compute upside if we have a target price
-            if target:
-                target = float(target)
-                tick_res = (
-                    db.table("price_ticks")
-                    .select("price")
-                    .eq("symbol", symbol)
-                    .order("fetched_at", desc=True)
-                    .limit(1)
-                    .execute()
-                )
-                if tick_res.data:
-                    current_price = float(tick_res.data[0]["price"])
-                    upside = ((target - current_price) / current_price) * 100
+            target = result["target"]
+            n_analysts = result["n_analysts"]
+            current_price = result.get("current_price")
+            upside = ((target - current_price) / current_price) * 100 if current_price else None
 
             db.table("analyst_cache").upsert(
                 {
@@ -193,15 +104,15 @@ def main() -> int:
             ).execute()
 
             updated += 1
-            if i % 10 == 0:
-                if target:
-                    price_str = f"${current_price:.2f}" if current_price else "—"
-                    upside_str = f"{upside:+.1f}%" if upside is not None else "(no live price)"
-                    print(f"  [{i+1}/{len(SYMBOLS)}] {symbol}: {price_str} → ${target:.2f} {upside_str}")
-                else:
-                    print(f"  [{i+1}/{len(SYMBOLS)}] {symbol}: {n_analysts} analysts (sentiment data)")
+            if symbol.endswith(".DE"):
+                de_updated += 1
 
-            time.sleep(0.3)
+            if i % 10 == 0:
+                price_str = f"${current_price:.2f}" if current_price else "—"
+                upside_str = f"{upside:+.1f}%" if upside is not None else ""
+                print(f"  [{i+1}/{len(SYMBOLS)}] {symbol}: {price_str} → ${target:.2f} {upside_str} ({n_analysts} analysts)")
+
+            time.sleep(0.2)
 
         except Exception as e:
             failed += 1
@@ -210,7 +121,9 @@ def main() -> int:
     print()
     print("=" * 50)
     print(f"Updated:           {updated}")
-    print(f"No analyst target: {skipped_no_target}")
+    print(f"  US stocks:       {updated - de_updated}")
+    print(f"  German (.DE):    {de_updated}")
+    print(f"No analyst data:   {skipped_no_target}")
     print(f"Failed:            {failed}")
     print("=" * 50)
 
