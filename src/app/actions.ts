@@ -8,14 +8,23 @@ function revalidateWatchlist() {
   revalidatePath("/watchlist");
 }
 
-export async function addSymbol(formData: FormData) {
-  const symbol = (formData.get("symbol") as string).toUpperCase().trim();
+export async function addSymbol(
+  _state: { error: string | null },
+  formData: FormData
+): Promise<{ error: string | null }> {
+  const symbol = (formData.get("symbol") as string ?? "").toUpperCase().trim();
   const min_price = parseFloat((formData.get("min_price") as string) || "0");
-  if (!symbol) return;
+  if (!symbol) return { error: "Symbol is required." };
 
   const db = await createClient();
-  await db.from("watchlist").upsert({ symbol, min_price }, { onConflict: "symbol" });
+  const { error } = await db
+    .from("watchlist")
+    .upsert({ symbol, min_price }, { onConflict: "symbol" });
+
+  if (error) return { error: error.message };
+
   revalidateWatchlist();
+  return { error: null };
 }
 
 export async function removeSymbol(symbol: string) {
