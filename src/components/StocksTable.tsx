@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
-import { Trash2, Check, X, TrendingUp, TrendingDown, ArrowDownToLine, ShoppingCart } from "lucide-react";
+import { useState, Fragment } from "react";
+import { Trash2, Check, X, TrendingUp, TrendingDown, ArrowDownToLine, ShoppingCart, ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { removeSymbol, updateMinPrice } from "@/app/actions";
 import { closePositionAction, placeOrderAction } from "@/app/alpaca-actions";
-import type { WatchlistRow } from "@/lib/types";
+import { StockChartPanel } from "@/components/StockChartPanel";
+import type { WatchlistRow, PriceTick } from "@/lib/types";
 import type { AlpacaPosition } from "@/lib/alpaca";
 
 export type Holding = {
@@ -19,13 +20,21 @@ type Props = {
   latestPrices: Record<string, number>;
   changes: Record<string, number | null>;
   colors: string[];
+  ticksBySymbol: Record<string, PriceTick[]>;
 };
 
-export function StocksTable({ holdings, latestPrices, changes, colors }: Props) {
+export function StocksTable({ holdings, latestPrices, changes, colors, ticksBySymbol }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
+  const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
   const [buyingSymbol, setBuyingSymbol] = useState<string | null>(null);
   const [buyQty, setBuyQty] = useState("1");
+
+  function toggleChart(symbol: string) {
+    setSelectedSymbol((prev) => (prev === symbol ? null : symbol));
+    setEditingId(null);
+    setBuyingSymbol(null);
+  }
 
   function startEdit(watch: WatchlistRow) {
     setBuyingSymbol(null);
@@ -104,11 +113,23 @@ export function StocksTable({ holdings, latestPrices, changes, colors }: Props) 
             const plpc = h.position ? parseFloat(h.position.unrealized_plpc) * 100 : 0;
             const avgEntry = h.position ? parseFloat(h.position.avg_entry_price) : 0;
 
+            const isSelected = selectedSymbol === h.symbol;
+
             return (
-              <tr key={h.symbol} className="group hover:bg-white/2 transition-colors">
+              <Fragment key={h.symbol}>
+              <tr
+                className={`group hover:bg-white/2 transition-colors cursor-pointer ${isSelected ? "bg-white/[0.015]" : ""}`}
+                onClick={(e) => {
+                  if ((e.target as HTMLElement).closest("button,input")) return;
+                  toggleChart(h.symbol);
+                }}
+              >
                 {/* Symbol with type label */}
                 <td className="py-3 px-3">
                   <div className="flex items-center gap-2.5">
+                    <ChevronDown
+                      className={`h-3 w-3 flex-shrink-0 text-muted-foreground/40 transition-transform duration-150 ${isSelected ? "rotate-180" : ""}`}
+                    />
                     <span
                       className="w-2 h-2 rounded-full flex-shrink-0"
                       style={{ backgroundColor: color }}
@@ -302,6 +323,20 @@ export function StocksTable({ holdings, latestPrices, changes, colors }: Props) 
                   )}
                 </td>
               </tr>
+              {isSelected && (
+                <tr>
+                  <td colSpan={8} className="px-4 pb-5 pt-1 bg-white/[0.015] border-b border-white/4">
+                    <StockChartPanel
+                      symbol={h.symbol}
+                      color={color}
+                      initialTicks={ticksBySymbol[h.symbol] ?? []}
+                      currentPrice={price}
+                      minPrice={minPrice}
+                    />
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             );
           })}
         </tbody>

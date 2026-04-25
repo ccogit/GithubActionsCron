@@ -2,8 +2,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getPositions } from "@/lib/alpaca";
 import { StocksTable, type Holding } from "@/components/StocksTable";
 import { AddStockForms } from "@/components/AddStockForms";
-import { AlertsTable } from "@/components/AlertsTable";
-import { StockChartPanel } from "@/components/StockChartPanel";
+import { CollapsibleAlerts } from "@/components/CollapsibleAlerts";
+import { MarketTable } from "@/components/MarketTable";
 import { AutoRefresh } from "@/components/AutoRefresh";
 import type { WatchlistRow, PriceTick, AlertLogRow } from "@/lib/types";
 
@@ -29,7 +29,6 @@ export default async function StocksPage() {
   const ticks: PriceTick[] = ticksRes.data ?? [];
   const alerts: AlertLogRow[] = alertsRes.data ?? [];
 
-  // Merge watchlist + positions into unified holdings, keyed by symbol.
   const holdingsMap = new Map<string, Holding>();
   for (const w of watchlist) {
     holdingsMap.set(w.symbol, { symbol: w.symbol, watch: w, position: null });
@@ -62,19 +61,17 @@ export default async function StocksPage() {
     changes[h.symbol] = ((last - first) / first) * 100;
   }
 
-  // Charts only for stocks where we actually have tick data (i.e., on watchlist).
-  const chartable = holdings.filter((h) => (ticksBySymbol[h.symbol]?.length ?? 0) > 0);
-
   return (
     <div className="min-h-screen">
       <AutoRefresh intervalMs={60_000} />
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-10">
 
+        {/* My holdings */}
         <section>
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
             <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              Stocks
+              My Stocks
             </h2>
             <AddStockForms />
           </div>
@@ -84,44 +81,20 @@ export default async function StocksPage() {
               latestPrices={latestPrices}
               changes={changes}
               colors={CHART_COLORS}
+              ticksBySymbol={ticksBySymbol}
             />
           </div>
         </section>
 
-        {chartable.length > 0 && (
-          <section>
-            <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-4">
-              Price History
-            </h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {chartable.map((h, i) => {
-                const color = CHART_COLORS[i % CHART_COLORS.length];
-                const currentPrice =
-                  latestPrices[h.symbol] ??
-                  (h.position ? parseFloat(h.position.current_price) : undefined);
-                const minPrice = h.watch?.min_price ?? 0;
-                return (
-                  <StockChartPanel
-                    key={h.symbol}
-                    symbol={h.symbol}
-                    color={color}
-                    initialTicks={ticksBySymbol[h.symbol] ?? []}
-                    currentPrice={currentPrice}
-                    minPrice={minPrice}
-                  />
-                );
-              })}
-            </div>
-          </section>
-        )}
+        {/* Collapsible alerts */}
+        <CollapsibleAlerts alerts={alerts} />
 
+        {/* Market overview */}
         <section>
           <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-4">
-            Recent Alerts
+            Market Overview
           </h2>
-          <div className="rounded-lg border border-white/8 bg-card overflow-hidden">
-            <AlertsTable alerts={alerts} />
-          </div>
+          <MarketTable />
         </section>
 
       </main>
