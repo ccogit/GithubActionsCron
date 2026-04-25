@@ -18,7 +18,8 @@
       "Bash(npm run *)",
       "Bash(chmod +x test-cache-endpoint.sh)",
       "Bash(./test-cache-endpoint.sh github-actions-cron.vercel.app 63796990c3d90a410e6650a6fe383feb)",
-      "Bash(xargs grep *)"
+      "Bash(xargs grep *)",
+      "Bash(python *)"
     ]
   }
 }

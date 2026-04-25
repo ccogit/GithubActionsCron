@@ -2,29 +2,27 @@ name: Refresh Analyst Cache
 
 on:
   schedule:
-    # Run every hour at minute 0
     - cron: '0 * * * *'
   workflow_dispatch:
 
 jobs:
   refresh-cache:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - name: Call analyst cache API
-        run: |
-          RESPONSE=$(curl -sL -w "\n%{http_code}" -X POST https://${{ secrets.DEPLOYMENT_URL }}/api/cache-analyst \
-            -H "Authorization: Bearer ${{ secrets.ANALYST_CACHE_KEY }}" \
-            -H "Content-Type: application/json")
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
-          BODY=$(echo "$RESPONSE" | sed '$d')
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
 
-          echo "HTTP Status: $HTTP_CODE"
-          echo "Response: $BODY"
+      - name: Install dependencies
+        run: pip install requests "supabase>=2.15.0"
 
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "✗ API call failed with status $HTTP_CODE"
-            exit 1
-          fi
-
-          echo "✓ Analyst cache refreshed successfully"
+      - name: Refresh analyst cache
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: python worker/refresh_analyst_cache.py

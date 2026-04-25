@@ -1,0 +1,201 @@
+"""Refresh the analyst_cache table from Yahoo Finance.
+
+Runs in GitHub Actions hourly. Bypasses the Vercel function timeout
+by doing the heavy lifting directly in the runner.
+"""
+
+import os
+import sys
+import time
+from typing import Optional
+
+import requests
+from supabase import create_client
+
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_SERVICE_ROLE = os.environ["SUPABASE_SERVICE_ROLE"]
+
+YAHOO_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Origin": "https://finance.yahoo.com",
+    "Referer": "https://finance.yahoo.com/",
+}
+
+# 161 symbols across Dow Jones, Nasdaq 100, DAX
+SYMBOLS = [
+    # Dow Jones
+    "AAPL", "AMGN", "AXP", "BA", "CAT", "CRM", "CSCO", "CVX", "DIS", "GS",
+    "HD", "HON", "IBM", "JNJ", "JPM", "KO", "MCD", "MMM", "MRK", "MSFT",
+    "NKE", "NVDA", "PG", "SHW", "TRV", "UNH", "V", "VZ", "WBA", "WMT",
+    # Nasdaq 100 (excluding overlaps)
+    "AMZN", "META", "GOOGL", "GOOG", "TSLA", "AVGO", "COST", "NFLX", "AMD",
+    "QCOM", "ADBE", "PEP", "INTU", "INTC", "TXN", "AMAT", "PANW", "ISRG",
+    "BKNG", "MU", "ADI", "GILD", "VRTX", "SBUX", "MDLZ", "LRCX", "REGN",
+    "KLAC", "ADP", "PYPL", "MELI", "PDD", "SNPS", "MAR", "CDNS", "ORLY",
+    "FTNT", "WDAY", "CSX", "ROP", "MRVL", "DASH", "MNST", "PCAR", "ABNB",
+    "PAYX", "AEP", "AZN", "ADSK", "FANG", "CTAS", "ROST", "CHTR", "EXC",
+    "DDOG", "TEAM", "BKR", "CPRT", "FAST", "ODFL", "GEHC", "KHC", "CCEP",
+    "EA", "VRSK", "CTSH", "XEL", "DLTR", "IDXX", "BIIB", "ANSS", "CSGP",
+    "ON", "GFS", "TTD", "DXCM", "ZS", "ARM", "WBD", "ENPH", "ZM", "MRNA",
+    "ILMN", "CRWD", "CDW", "CEG", "SIRI", "NXPI", "LIN", "CMCSA",
+    # DAX
+    "ADS.DE", "AIR.DE", "ALV.DE", "BAS.DE", "BAYN.DE", "BEI.DE", "BMW.DE",
+    "BNR.DE", "CBK.DE", "CON.DE", "1COV.DE", "DB1.DE", "DBK.DE", "DHER.DE",
+    "DHL.DE", "DTE.DE", "DTG.DE", "ENR.DE", "EOAN.DE", "FRE.DE", "HEI.DE",
+    "HEN3.DE", "HNR1.DE", "IFX.DE", "MBG.DE", "MRK.DE", "MTX.DE", "MUV2.DE",
+    "P911.DE", "PAH3.DE", "PUM.DE", "QGEN.DE", "RHM.DE", "RWE.DE", "SAP.DE",
+    "SHL.DE", "SIE.DE", "SRT3.DE", "SY1.DE", "VNA.DE", "VOW3.DE",
+]
+
+
+def get_crumb(session: requests.Session) -> Optional[str]:
+    """Get Yahoo Finance crumb for authenticated requests."""
+    try:
+        # Initialize cookies
+        session.get("https://fc.yahoo.com", headers=YAHOO_HEADERS, timeout=10)
+        # Get crumb
+        r = session.get(
+            "https://query2.finance.yahoo.com/v1/test/getcrumb",
+            headers=YAHOO_HEADERS,
+            timeout=10,
+        )
+        if r.ok and r.text and "<" not in r.text:
+            return r.text.strip()
+    except Exception as e:
+        print(f"Failed to get crumb: {e}", file=sys.stderr)
+    return None
+
+
+def get_analyst_target(
+    session: requests.Session, symbol: str, crumb: Optional[str]
+) -> Optional[dict]:
+    """Fetch analyst target price from Yahoo Finance."""
+    clean_symbol = symbol  # Yahoo accepts .DE suffix directly
+
+    # Try v10 quoteSummary with crumb
+    if crumb:
+        url = (
+            f"https://query2.finance.yahoo.com/v10/finance/quoteSummary/"
+            f"{clean_symbol}?modules=financialData&crumb={crumb}"
+        )
+        try:
+            r = session.get(url, headers=YAHOO_HEADERS, timeout=10)
+            if r.ok:
+                data = r.json()
+                fd = (
+                    data.get("quoteSummary", {})
+                    .get("result", [{}])[0]
+                    .get("financialData", {})
+                )
+                target = fd.get("targetMeanPrice", {}).get("raw")
+                n = fd.get("numberOfAnalystOpinions", {}).get("raw")
+                if target:
+                    return {"target": target, "n_analysts": n}
+        except Exception:
+            pass
+
+    # Fallback to v7 quote
+    try:
+        r = session.get(
+            f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={clean_symbol}",
+            headers=YAHOO_HEADERS,
+            timeout=10,
+        )
+        if r.ok:
+            results = r.json().get("quoteResponse", {}).get("result", [])
+            if results:
+                quote = results[0]
+                target = quote.get("targetMeanPrice")
+                n = quote.get("averageAnalystRating") and len(
+                    quote.get("averageAnalystRating", "").split()
+                )
+                if target:
+                    return {"target": target, "n_analysts": quote.get("numberOfAnalystOpinions")}
+    except Exception as e:
+        print(f"  v7 quote failed for {symbol}: {e}", file=sys.stderr)
+
+    return None
+
+
+def main() -> int:
+    db = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE)
+    session = requests.Session()
+
+    print(f"Fetching crumb...")
+    crumb = get_crumb(session)
+    print(f"Crumb: {'obtained' if crumb else 'unavailable (using fallback)'}")
+
+    updated = 0
+    skipped_no_target = 0
+    skipped_no_price = 0
+    failed = 0
+
+    print(f"Processing {len(SYMBOLS)} symbols...")
+
+    for i, symbol in enumerate(SYMBOLS):
+        try:
+            result = get_analyst_target(session, symbol, crumb)
+            if not result or not result.get("target"):
+                skipped_no_target += 1
+                if i % 20 == 0:
+                    print(f"  [{i+1}/{len(SYMBOLS)}] {symbol}: no target")
+                continue
+
+            # Get latest price from price_ticks
+            tick_res = (
+                db.table("price_ticks")
+                .select("price")
+                .eq("symbol", symbol)
+                .order("fetched_at", desc=True)
+                .limit(1)
+                .execute()
+            )
+
+            if not tick_res.data:
+                skipped_no_price += 1
+                continue
+
+            current_price = float(tick_res.data[0]["price"])
+            target = float(result["target"])
+            upside = ((target - current_price) / current_price) * 100
+
+            db.table("analyst_cache").upsert(
+                {
+                    "symbol": symbol,
+                    "target_mean": target,
+                    "current_price": current_price,
+                    "upside_pct": upside,
+                    "n_analysts": result.get("n_analysts"),
+                },
+                on_conflict="symbol",
+            ).execute()
+
+            updated += 1
+            if i % 10 == 0:
+                print(f"  [{i+1}/{len(SYMBOLS)}] {symbol}: ${current_price:.2f} → ${target:.2f} ({upside:+.1f}%)")
+
+            # Polite rate-limit on Yahoo
+            time.sleep(0.3)
+
+        except Exception as e:
+            failed += 1
+            print(f"  [{i+1}/{len(SYMBOLS)}] {symbol}: error - {e}", file=sys.stderr)
+
+    print()
+    print("=" * 50)
+    print(f"Updated:           {updated}")
+    print(f"No analyst target: {skipped_no_target}")
+    print(f"No price tick:     {skipped_no_price}")
+    print(f"Failed:            {failed}")
+    print("=" * 50)
+
+    return 0 if updated > 0 else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
