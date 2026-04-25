@@ -19,7 +19,10 @@
       "Bash(chmod +x test-cache-endpoint.sh)",
       "Bash(./test-cache-endpoint.sh github-actions-cron.vercel.app 63796990c3d90a410e6650a6fe383feb)",
       "Bash(xargs grep *)",
-      "Bash(python *)"
+      "Bash(python *)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/ccogit/GithubActionsCron/main/worker/refresh_analyst_cache.py\")",
+      "Bash(curl -s \"https://api.github.com/repos/ccogit/GithubActionsCron/actions/workflows/266281709/runs?per_page=3\")",
+      "WebFetch(domain:finnhub.io)"
     ]
   }
 }

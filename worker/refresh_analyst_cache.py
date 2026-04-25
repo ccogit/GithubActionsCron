@@ -15,6 +15,7 @@ from supabase import create_client
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_ROLE = os.environ["SUPABASE_SERVICE_ROLE"]
+FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY", "")
 
 YAHOO_HEADERS = {
     "User-Agent": (
@@ -72,11 +73,60 @@ def get_crumb(session: requests.Session) -> Optional[str]:
     return None
 
 
+def get_finnhub_analyst_data(symbol: str) -> Optional[dict]:
+    """Fetch analyst data from Finnhub (primarily for German stocks)."""
+    if not FINNHUB_API_KEY:
+        return None
+
+    try:
+        # Get recommendation trends (buy/hold/sell counts)
+        url = f"https://finnhub.io/api/v1/recommendation?symbol={symbol}&token={FINNHUB_API_KEY}"
+        r = requests.get(url, timeout=10)
+        if r.ok:
+            data = r.json()
+            if isinstance(data, list) and len(data) > 0:
+                rec = data[0]
+                # Calculate consensus: more buys than sells = bullish, etc.
+                buy_count = rec.get("buy", 0)
+                hold_count = rec.get("hold", 0)
+                sell_count = rec.get("sell", 0)
+                strong_buy = rec.get("strongBuy", 0)
+                strong_sell = rec.get("strongSell", 0)
+
+                total = buy_count + hold_count + sell_count + strong_buy + strong_sell
+                if total > 0:
+                    # Calculate implied target as average of buy/strong_buy ratio
+                    # Since Finnhub free tier doesn't include price targets,
+                    # we return the analyst count and sentiment
+                    return {
+                        "n_analysts": total,
+                        "sentiment": {
+                            "strongBuy": strong_buy,
+                            "buy": buy_count,
+                            "hold": hold_count,
+                            "sell": sell_count,
+                            "strongSell": strong_sell,
+                        },
+                    }
+    except Exception as e:
+        print(f"  Finnhub failed for {symbol}: {e}", file=sys.stderr)
+
+    return None
+
+
 def get_analyst_target(
     session: requests.Session, symbol: str, crumb: Optional[str]
 ) -> Optional[dict]:
-    """Fetch analyst target price from Yahoo Finance."""
+    """Fetch analyst target price from Yahoo Finance (US) or Finnhub (German stocks)."""
     clean_symbol = symbol  # Yahoo accepts .DE suffix directly
+
+    # For German stocks (.DE), try Finnhub first
+    if symbol.endswith(".DE"):
+        finnhub_data = get_finnhub_analyst_data(symbol.replace(".DE", ""))
+        if finnhub_data and finnhub_data.get("n_analysts"):
+            return finnhub_data
+        # If Finnhub doesn't have data, fall through to Yahoo as fallback
+        time.sleep(0.3)
 
     # Try v10 quoteSummary with crumb
     if crumb:
@@ -140,32 +190,45 @@ def main() -> int:
     for i, symbol in enumerate(SYMBOLS):
         try:
             result = get_analyst_target(session, symbol, crumb)
-            if not result or not result.get("target"):
+            if not result:
                 skipped_no_target += 1
                 if i % 20 == 0:
-                    print(f"  [{i+1}/{len(SYMBOLS)}] {symbol}: no target")
-                # Polite rate-limit even on miss (we still hit Yahoo)
+                    print(f"  [{i+1}/{len(SYMBOLS)}] {symbol}: no data")
+                # Polite rate-limit even on miss (we still hit provider)
                 time.sleep(0.3)
                 continue
 
-            target = float(result["target"])
+            target = result.get("target")
+            n_analysts = result.get("n_analysts")
+
+            # Skip if we don't have analyst count
+            if not n_analysts:
+                skipped_no_target += 1
+                if i % 20 == 0:
+                    print(f"  [{i+1}/{len(SYMBOLS)}] {symbol}: no analyst data")
+                time.sleep(0.3)
+                continue
 
             # Optional: enrich with current price from price_ticks (only present
             # for symbols in user's watchlist). The aggregator computes upside
             # against fresh quotes, so this is informational only.
             current_price = None
             upside = None
-            tick_res = (
-                db.table("price_ticks")
-                .select("price")
-                .eq("symbol", symbol)
-                .order("fetched_at", desc=True)
-                .limit(1)
-                .execute()
-            )
-            if tick_res.data:
-                current_price = float(tick_res.data[0]["price"])
-                upside = ((target - current_price) / current_price) * 100
+
+            # Only compute upside if we have a target price
+            if target:
+                target = float(target)
+                tick_res = (
+                    db.table("price_ticks")
+                    .select("price")
+                    .eq("symbol", symbol)
+                    .order("fetched_at", desc=True)
+                    .limit(1)
+                    .execute()
+                )
+                if tick_res.data:
+                    current_price = float(tick_res.data[0]["price"])
+                    upside = ((target - current_price) / current_price) * 100
 
             db.table("analyst_cache").upsert(
                 {
@@ -173,7 +236,7 @@ def main() -> int:
                     "target_mean": target,
                     "current_price": current_price,
                     "upside_pct": upside,
-                    "n_analysts": result.get("n_analysts"),
+                    "n_analysts": n_analysts,
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 },
                 on_conflict="symbol",
@@ -181,9 +244,12 @@ def main() -> int:
 
             updated += 1
             if i % 10 == 0:
-                price_str = f"${current_price:.2f}" if current_price else "—"
-                upside_str = f"{upside:+.1f}%" if upside is not None else "(no live price)"
-                print(f"  [{i+1}/{len(SYMBOLS)}] {symbol}: {price_str} → ${target:.2f} {upside_str}")
+                if target:
+                    price_str = f"${current_price:.2f}" if current_price else "—"
+                    upside_str = f"{upside:+.1f}%" if upside is not None else "(no live price)"
+                    print(f"  [{i+1}/{len(SYMBOLS)}] {symbol}: {price_str} → ${target:.2f} {upside_str}")
+                else:
+                    print(f"  [{i+1}/{len(SYMBOLS)}] {symbol}: {n_analysts} analysts (sentiment data)")
 
             time.sleep(0.3)
 
