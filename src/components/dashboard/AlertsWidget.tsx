@@ -48,20 +48,44 @@ export async function AlertsWidget() {
       </div>
 
       {/* Preview rows */}
-      <div className="space-y-2">
+      <div className="space-y-3">
         {preview.map((alert) => (
-          <div key={alert.id} className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="font-mono text-sm font-semibold text-red-400">
-                {alert.symbol}
-              </span>
-              <span className="font-mono text-xs text-muted-foreground tabular-nums">
-                ${Number(alert.price).toFixed(2)} &lt; ${Number(alert.min_price).toFixed(2)}
+          <div key={alert.id} className="space-y-1">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-sm font-semibold text-red-400">
+                  {alert.symbol}
+                </span>
+                <span className="font-mono text-xs text-muted-foreground tabular-nums">
+                  ${Number(alert.price).toFixed(2)} &lt; ${Number(alert.min_price).toFixed(2)}
+                </span>
+              </div>
+              <span className="font-mono text-xs text-muted-foreground">
+                {format(new Date(alert.sent_at), "MMM d, HH:mm")}
               </span>
             </div>
-            <span className="font-mono text-xs text-muted-foreground">
-              {format(new Date(alert.sent_at), "MMM d, HH:mm")}
-            </span>
+            <div className="flex items-center gap-1.5">
+              {alert.email_sent != null && (
+                <span className={`text-xs font-mono px-1.5 py-0.5 rounded border ${
+                  alert.email_sent
+                    ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                    : "bg-red-500/10 text-red-400 border-red-500/20"
+                }`}>
+                  {alert.email_sent ? "email sent" : "email failed"}
+                </span>
+              )}
+              {alert.order_placed ? (
+                <span className="text-xs font-mono px-1.5 py-0.5 rounded border bg-amber-500/10 text-amber-400 border-amber-500/20">
+                  {alert.order_id
+                    ? `sold · ${String(alert.order_id).slice(0, 8)}`
+                    : "sold"}
+                </span>
+              ) : alert.order_placed != null && (
+                <span className="text-xs font-mono px-1.5 py-0.5 rounded border bg-white/5 text-muted-foreground border-white/8">
+                  no position
+                </span>
+              )}
+            </div>
           </div>
         ))}
         {alerts.length === 0 && (
