@@ -26,19 +26,3 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: python worker/refresh_analyst_cache.py
-    steps:
-      - name: Call analyst cache API
-        run: |
-          curl -X POST https://${{ secrets.DEPLOYMENT_URL }}/api/cache-analyst \
-            -H "Authorization: Bearer ${{ secrets.ANALYST_CACHE_KEY }}" \
-            -H "Content-Type: application/json"
-
-      - name: Log result
-        if: success()
-        run: echo "✓ Analyst cache refreshed successfully"
-
-      - name: Handle failure
-        if: failure()
-        run: |
-          echo "✗ Failed to refresh analyst cache"
-          exit 1
