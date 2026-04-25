@@ -108,7 +108,7 @@ def get_gdelt_sentiment(symbol: str) -> Optional[dict]:
             "timespan": "7d",
         }
 
-        r = requests.get(url, params=params, timeout=10)
+        r = requests.get(url, params=params, timeout=30)  # Increased timeout
         if not r.ok:
             return None
 
@@ -173,7 +173,7 @@ def get_google_trends(symbol: str) -> Optional[dict]:
 
 
 def get_policy_events(symbol: str) -> Optional[list]:
-    """Fetch relevant policy events from GDELT."""
+    """Fetch relevant policy events from GDELT. Non-blocking - errors are silent."""
     try:
         url = "https://api.gdeltproject.org/api/v2/tone/search"
         params = {
@@ -183,7 +183,7 @@ def get_policy_events(symbol: str) -> Optional[list]:
             "timespan": "30d",
         }
 
-        r = requests.get(url, params=params, timeout=10)
+        r = requests.get(url, params=params, timeout=20)  # Increased timeout
         if not r.ok or "tone" not in r.json():
             return None
 
@@ -198,7 +198,7 @@ def get_policy_events(symbol: str) -> Optional[list]:
         ]
 
     except Exception as e:
-        print(f"  Error getting policy events for {symbol}: {e}", file=sys.stderr)
+        # Silent fail - policy events are optional enrichment
         return None
 
 
@@ -222,10 +222,15 @@ def main() -> int:
         try:
             print(f"  [{i+1}/{len(symbols)}] {symbol}...", end=" ", flush=True)
 
-            # Fetch signals
+            # Fetch signals (GDELT is optional, sentiment/trends are core)
             sentiment_data = get_news_sentiment(symbol)
             trends_data = get_google_trends(symbol)
-            events_data = get_policy_events(symbol)
+            events_data = get_policy_events(symbol)  # Silent fails OK
+
+            # Skip if no core data
+            if not sentiment_data and not trends_data:
+                print("no data")
+                continue
 
             # Update database
             update_payload = {
@@ -255,7 +260,7 @@ def main() -> int:
 
         except Exception as e:
             failed += 1
-            print(f" ✗ ({e})", file=sys.stderr)
+            print(f" ✗ DB error", file=sys.stderr)
 
     print()
     print("=" * 50)
