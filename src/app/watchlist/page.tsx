@@ -1,11 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
 import { getPositions } from "@/lib/alpaca";
-import { StocksTable, type Holding } from "@/components/StocksTable";
-import { AddStockForms } from "@/components/AddStockForms";
+import { RealtimeWatchlist } from "@/components/RealtimeWatchlist";
 import { CollapsibleAlerts } from "@/components/CollapsibleAlerts";
-import { MarketTable } from "@/components/MarketTable";
-import { AutoRefresh } from "@/components/AutoRefresh";
+import { MarketAggregates } from "@/components/MarketAggregates";
+import { BrowseExchanges } from "@/components/BrowseExchanges";
 import type { WatchlistRow, PriceTick, AlertLogRow } from "@/lib/types";
+import type { Holding } from "@/components/StocksTable";
 
 export const dynamic = "force-dynamic";
 
@@ -63,28 +63,17 @@ export default async function StocksPage() {
 
   return (
     <div className="min-h-screen">
-      <AutoRefresh intervalMs={60_000} />
-
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-10">
 
-        {/* My holdings */}
-        <section>
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-            <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground">
-              My Stocks
-            </h2>
-            <AddStockForms />
-          </div>
-          <div className="rounded-lg border border-white/8 bg-card overflow-hidden">
-            <StocksTable
-              holdings={holdings}
-              latestPrices={latestPrices}
-              changes={changes}
-              colors={CHART_COLORS}
-              ticksBySymbol={ticksBySymbol}
-            />
-          </div>
-        </section>
+        {/* My holdings with real-time updates */}
+        <RealtimeWatchlist
+          holdings={holdings}
+          initialLatestPrices={latestPrices}
+          initialChanges={changes}
+          initialTicksBySymbol={ticksBySymbol}
+          initialAlerts={alerts}
+          colors={CHART_COLORS}
+        />
 
         {/* Collapsible alerts */}
         <CollapsibleAlerts alerts={alerts} />
@@ -94,7 +83,15 @@ export default async function StocksPage() {
           <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-4">
             Market Overview
           </h2>
-          <MarketTable />
+          <MarketAggregates />
+        </section>
+
+        {/* Browse exchanges */}
+        <section>
+          <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-4">
+            Explore
+          </h2>
+          <BrowseExchanges />
         </section>
 
       </main>

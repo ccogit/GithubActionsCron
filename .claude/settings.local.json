@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx create-next-app@latest *)",
+      "Bash(npx shadcn@latest init --defaults -y)",
+      "Bash(npm install *)",
+      "Bash(npx shadcn@latest add table card input badge dialog --yes)",
+      "Bash(npx tsc *)",
+      "WebSearch",
+      "WebFetch(domain:supabase.com)",
+      "Bash(git fetch *)",
+      "Bash(git pull *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)",
+      "Bash(gh run *)",
+      "Bash(git -C worker commit -m ' *)",
+      "Bash(npm run *)"
+    ]
+  }
+}
