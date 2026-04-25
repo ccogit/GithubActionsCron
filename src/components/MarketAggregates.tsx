@@ -2,6 +2,16 @@
 import { useEffect, useState } from "react";
 import { TrendingUp, TrendingDown, Calendar } from "lucide-react";
 
+// Get color and intensity for upside percentage
+function getUpsideColor(upside: number | null | undefined) {
+  if (!upside) return { bg: "bg-gray-500/20", text: "text-gray-400", bar: "bg-gray-500" };
+  if (upside < 0) return { bg: "bg-red-500/20", text: "text-red-400", bar: "bg-red-500" };
+  if (upside < 10) return { bg: "bg-orange-500/20", text: "text-orange-400", bar: "bg-orange-500" };
+  if (upside < 25) return { bg: "bg-yellow-500/20", text: "text-yellow-400", bar: "bg-yellow-500" };
+  if (upside < 40) return { bg: "bg-lime-500/20", text: "text-lime-400", bar: "bg-lime-500" };
+  return { bg: "bg-green-500/20", text: "text-green-400", bar: "bg-green-500" };
+}
+
 interface HotStock {
   exchange: string;
   symbol: string;
@@ -83,29 +93,41 @@ export function MarketAggregates() {
                 {ex}
               </div>
               <div className="space-y-3">
-                {(hotStocksByEx[ex] || []).map((stock) => (
-                  <div key={stock.symbol} className="space-y-1 text-sm">
-                    <div className="flex justify-between items-start">
-                      <span className="font-medium">{stock.symbol}</span>
-                      <span
-                        className={
-                          (stock.upside || 0) > 0
-                            ? "text-green-400"
-                            : "text-red-400"
-                        }
-                      >
-                        {stock.upside ? stock.upside.toFixed(1) : "—"}%
-                      </span>
+                {(hotStocksByEx[ex] || []).map((stock) => {
+                  const colors = getUpsideColor(stock.upside);
+                  const barWidth = Math.min((stock.upside || 0) / 2, 100);
+                  return (
+                    <div
+                      key={stock.symbol}
+                      className={`space-y-2 p-3 rounded-lg border border-white/5 ${colors.bg} transition-colors`}
+                    >
+                      <div className="flex justify-between items-start">
+                        <span className="font-medium">{stock.symbol}</span>
+                        <span className={`font-semibold ${colors.text}`}>
+                          {stock.upside ? `+${stock.upside.toFixed(1)}%` : "—"}
+                        </span>
+                      </div>
+
+                      {/* Visual upside bar */}
+                      {stock.upside && stock.upside > 0 && (
+                        <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full ${colors.bar} transition-all`}
+                            style={{ width: `${Math.min(barWidth, 100)}%` }}
+                          />
+                        </div>
+                      )}
+
+                      <div className="text-xs text-muted-foreground">
+                        ${stock.currentPrice.toFixed(2)} → $
+                        {stock.targetMean?.toFixed(2) || "—"}
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {stock.nAnalysts || 0} analysts
+                      </div>
                     </div>
-                    <div className="text-xs text-muted-foreground">
-                      ${stock.currentPrice.toFixed(2)} → $
-                      {stock.targetMean?.toFixed(2) || "—"}
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {stock.nAnalysts || 0} analysts
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
                 {(hotStocksByEx[ex] || []).length === 0 && (
                   <div className="text-xs text-muted-foreground">
                     No data available
@@ -134,27 +156,46 @@ export function MarketAggregates() {
                   {ex}
                 </div>
                 <div className="space-y-3">
-                  {exMovers.slice(0, 3).map((mover) => (
-                    <div key={mover.symbol} className="space-y-1 text-sm">
-                      <div className="flex justify-between items-start">
-                        <span className="font-medium">{mover.symbol}</span>
-                        <span
-                          className={
-                            mover.changePct > 0
-                              ? "text-green-400"
-                              : "text-red-400"
-                          }
-                        >
-                          {mover.changePct > 0 ? "+" : ""}
-                          {mover.changePct.toFixed(2)}%
-                        </span>
+                  {exMovers.slice(0, 3).map((mover) => {
+                    const isUp = mover.changePct > 0;
+                    const absMoverColor = Math.abs(mover.changePct);
+                    const bgColor = isUp
+                      ? "bg-green-500/20"
+                      : "bg-red-500/20";
+                    const barColor = isUp
+                      ? "bg-green-500"
+                      : "bg-red-500";
+                    const textColor = isUp
+                      ? "text-green-400"
+                      : "text-red-400";
+                    return (
+                      <div
+                        key={mover.symbol}
+                        className={`space-y-2 p-3 rounded-lg border border-white/5 ${bgColor} transition-colors`}
+                      >
+                        <div className="flex justify-between items-start">
+                          <span className="font-medium">{mover.symbol}</span>
+                          <span className={`font-semibold ${textColor}`}>
+                            {mover.changePct > 0 ? "+" : ""}
+                            {mover.changePct.toFixed(2)}%
+                          </span>
+                        </div>
+
+                        {/* Visual change bar */}
+                        <div className="h-1.5 bg-white/10 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full ${barColor} transition-all`}
+                            style={{ width: `${Math.min(absMoverColor * 3, 100)}%` }}
+                          />
+                        </div>
+
+                        <div className="text-xs text-muted-foreground">
+                          ${mover.price.toFixed(2)} ({mover.change > 0 ? "+" : ""}
+                          {mover.change.toFixed(2)})
+                        </div>
                       </div>
-                      <div className="text-xs text-muted-foreground">
-                        ${mover.price.toFixed(2)} ({mover.change > 0 ? "+" : ""}
-                        {mover.change.toFixed(2)})
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             );
