@@ -12,16 +12,19 @@ jobs:
     steps:
       - name: Call analyst cache API
         run: |
-          curl -X POST https://${{ secrets.DEPLOYMENT_URL }}/api/cache-analyst \
+          RESPONSE=$(curl -sL -w "\n%{http_code}" -X POST https://${{ secrets.DEPLOYMENT_URL }}/api/cache-analyst \
             -H "Authorization: Bearer ${{ secrets.ANALYST_CACHE_KEY }}" \
-            -H "Content-Type: application/json"
+            -H "Content-Type: application/json")
 
-      - name: Log result
-        if: success()
-        run: echo "✓ Analyst cache refreshed successfully"
+          HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+          BODY=$(echo "$RESPONSE" | sed '$d')
 
-      - name: Handle failure
-        if: failure()
-        run: |
-          echo "✗ Failed to refresh analyst cache"
-          exit 1
+          echo "HTTP Status: $HTTP_CODE"
+          echo "Response: $BODY"
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "✗ API call failed with status $HTTP_CODE"
+            exit 1
+          fi
+
+          echo "✓ Analyst cache refreshed successfully"
