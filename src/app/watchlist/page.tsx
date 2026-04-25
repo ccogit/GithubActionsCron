@@ -1,9 +1,12 @@
+import { Bell } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getPositions } from "@/lib/alpaca";
 import { RealtimeWatchlist } from "@/components/RealtimeWatchlist";
-import { CollapsibleAlerts } from "@/components/CollapsibleAlerts";
+import { CollapsibleSection } from "@/components/CollapsibleSection";
+import { AddStockForms } from "@/components/AddStockForms";
+import { AlertsTable } from "@/components/AlertsTable";
 import { MarketAggregates } from "@/components/MarketAggregates";
-import { BrowseExchanges } from "@/components/BrowseExchanges";
+import { MarketTable } from "@/components/MarketTable";
 import type { WatchlistRow, PriceTick, AlertLogRow } from "@/lib/types";
 import type { Holding } from "@/components/StocksTable";
 
@@ -64,36 +67,37 @@ export default async function StocksPage() {
   return (
     <div className="min-h-screen">
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-10">
+        <CollapsibleSection
+          title="My Stocks"
+          defaultOpen={true}
+          headerActions={<AddStockForms />}
+        >
+          <RealtimeWatchlist
+            holdings={holdings}
+            initialLatestPrices={latestPrices}
+            initialChanges={changes}
+            initialTicksBySymbol={ticksBySymbol}
+            colors={CHART_COLORS}
+          />
+        </CollapsibleSection>
 
-        {/* My holdings with real-time updates */}
-        <RealtimeWatchlist
-          holdings={holdings}
-          initialLatestPrices={latestPrices}
-          initialChanges={changes}
-          initialTicksBySymbol={ticksBySymbol}
-          initialAlerts={alerts}
-          colors={CHART_COLORS}
-        />
+        <CollapsibleSection
+          title="Recent Alerts"
+          icon={<Bell className="h-3 w-3 text-muted-foreground/60" />}
+          badge={alerts.length}
+        >
+          <div className="rounded-lg border border-white/8 bg-card overflow-hidden">
+            <AlertsTable alerts={alerts} />
+          </div>
+        </CollapsibleSection>
 
-        {/* Collapsible alerts */}
-        <CollapsibleAlerts alerts={alerts} />
-
-        {/* Market overview */}
-        <section>
-          <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-4">
-            Market Overview
-          </h2>
+        <CollapsibleSection title="Market Overview" defaultOpen={true}>
           <MarketAggregates />
-        </section>
+        </CollapsibleSection>
 
-        {/* Browse exchanges */}
-        <section>
-          <h2 className="text-xs font-medium uppercase tracking-widest text-muted-foreground mb-4">
-            Explore
-          </h2>
-          <BrowseExchanges />
-        </section>
-
+        <CollapsibleSection title="Explore">
+          <MarketTable />
+        </CollapsibleSection>
       </main>
     </div>
   );
