@@ -15,6 +15,10 @@ interface TradeData {
   buy_ratio: number;
   top_buyers: TradeEntry[];
   top_sellers: TradeEntry[];
+  news_sentiment?: number | null; // -1 to 1
+  trends_score?: number | null; // 0-100
+  trends_direction?: string | null; // 'rising', 'falling', 'stable'
+  policy_events?: any[] | null;
 }
 
 type TabType = 'most-bought' | 'most-sold' | 'strongest';
@@ -125,6 +129,41 @@ export function PoliticianTrades() {
                     )}
                   </div>
                 </div>
+              </div>
+
+              {/* Signal enrichment */}
+              <div className="grid grid-cols-3 gap-2 text-xs py-2 border-t border-white/10 pt-2">
+                {trade.news_sentiment !== null && trade.news_sentiment !== undefined ? (
+                  <div className={`px-2 py-1 rounded ${
+                    trade.news_sentiment > 0.1 ? 'bg-green-500/10 text-green-300' :
+                    trade.news_sentiment < -0.1 ? 'bg-red-500/10 text-red-300' :
+                    'bg-yellow-500/10 text-yellow-300'
+                  }`}>
+                    Sentiment: {(trade.news_sentiment * 100).toFixed(0)}%
+                  </div>
+                ) : (
+                  <div className="text-muted-foreground px-2">No sentiment</div>
+                )}
+
+                {trade.trends_direction ? (
+                  <div className={`px-2 py-1 rounded ${
+                    trade.trends_direction === 'rising' ? 'bg-green-500/10 text-green-300' :
+                    trade.trends_direction === 'falling' ? 'bg-red-500/10 text-red-300' :
+                    'bg-blue-500/10 text-blue-300'
+                  }`}>
+                    Trends: {trade.trends_direction}
+                  </div>
+                ) : (
+                  <div className="text-muted-foreground px-2">No trends</div>
+                )}
+
+                {trade.policy_events && trade.policy_events.length > 0 ? (
+                  <div className="bg-purple-500/10 text-purple-300 px-2 py-1 rounded">
+                    Events: {trade.policy_events.length}
+                  </div>
+                ) : (
+                  <div className="text-muted-foreground px-2">No events</div>
+                )}
               </div>
 
               {/* Top traders */}

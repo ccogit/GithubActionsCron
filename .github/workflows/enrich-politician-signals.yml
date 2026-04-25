@@ -1,0 +1,29 @@
+name: Enrich Politician Signals
+
+on:
+  schedule:
+    - cron: '30 8 * * *'  # Daily at 8:30am UTC (after trades refresh)
+  workflow_dispatch:
+
+jobs:
+  enrich-signals:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: pip install requests "supabase>=2.15.0" textblob nltk pytrends
+
+      - name: Enrich politician signals
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
+        run: python worker/enrich_politician_signals.py
