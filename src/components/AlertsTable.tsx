@@ -19,6 +19,7 @@ export function AlertsTable({ alerts }: { alerts: AlertLogRow[] }) {
             <th className="text-left py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Symbol</th>
             <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Price at Alert</th>
             <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Threshold</th>
+            <th className="text-left py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Actions</th>
             <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Triggered</th>
           </tr>
         </thead>
@@ -36,6 +37,28 @@ export function AlertsTable({ alerts }: { alerts: AlertLogRow[] }) {
               </td>
               <td className="py-3 px-3 text-right font-mono text-muted-foreground tabular-nums">
                 ${row.min_price.toFixed(2)}
+              </td>
+              <td className="py-3 px-3">
+                <div className="flex items-center gap-1.5">
+                  {row.email_sent != null && (
+                    <span className={`text-xs font-mono px-1.5 py-0.5 rounded border ${
+                      row.email_sent
+                        ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
+                        : "bg-red-500/10 text-red-400 border-red-500/20"
+                    }`}>
+                      {row.email_sent ? "email sent" : "email failed"}
+                    </span>
+                  )}
+                  {row.order_placed ? (
+                    <span className="text-xs font-mono px-1.5 py-0.5 rounded border bg-amber-500/10 text-amber-400 border-amber-500/20">
+                      {row.order_id ? `sold · ${row.order_id.slice(0, 8)}` : "sold"}
+                    </span>
+                  ) : row.order_placed != null && (
+                    <span className="text-xs font-mono px-1.5 py-0.5 rounded border bg-white/5 text-muted-foreground border-white/8">
+                      no position
+                    </span>
+                  )}
+                </div>
               </td>
               <td className="py-3 px-3 text-right font-mono text-xs text-muted-foreground">
                 {format(new Date(row.sent_at), "MMM d, HH:mm")}

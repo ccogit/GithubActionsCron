@@ -2,7 +2,7 @@ export type WatchlistRow = {
   id: string;
   symbol: string;
   min_price: number;
-  alert_cooldown_until: string;
+  alert_active: boolean;
   created_at: string;
 };
 
@@ -19,4 +19,7 @@ export type AlertLogRow = {
   price: number;
   min_price: number;
   sent_at: string;
+  email_sent: boolean | null;
+  order_placed: boolean | null;
+  order_id: string | null;
 };
