@@ -1,12 +1,9 @@
-import { Bell } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { getPositions } from "@/lib/alpaca";
 import { RealtimeWatchlist } from "@/components/RealtimeWatchlist";
 import { CollapsibleSection } from "@/components/CollapsibleSection";
 import { AddStockForms } from "@/components/AddStockForms";
-import { AlertsTable } from "@/components/AlertsTable";
-import { MarketTable } from "@/components/MarketTable";
-import { MarketPulse } from "@/components/MarketPulse";
+import { MarketTabs } from "@/components/MarketTabs";
 import { StockSpotlight } from "@/components/StockSpotlight";
 import type { WatchlistRow, PriceTick, AlertLogRow } from "@/lib/types";
 import type { Holding } from "@/components/StocksTable";
@@ -75,7 +72,7 @@ export default async function StocksPage() {
 
   return (
     <div className="min-h-screen">
-      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-10">
+      <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-8">
         {/* MY PORTFOLIO */}
         <CollapsibleSection
           title="My Portfolio"
@@ -83,7 +80,6 @@ export default async function StocksPage() {
           headerActions={<AddStockForms />}
         >
           <div className="space-y-6">
-            {/* Holdings Table */}
             <RealtimeWatchlist
               holdings={holdings}
               initialLatestPrices={latestPrices}
@@ -92,7 +88,6 @@ export default async function StocksPage() {
               colors={CHART_COLORS}
             />
 
-            {/* Stock Spotlight - Personalized Signals */}
             {ownedSymbols.length > 0 && (
               <div className="border-t border-white/10 pt-6">
                 <h3 className="text-sm font-semibold mb-4">Personalized Signals</h3>
@@ -102,27 +97,8 @@ export default async function StocksPage() {
           </div>
         </CollapsibleSection>
 
-        {/* MARKET PULSE */}
-        <CollapsibleSection title="Market Pulse" defaultOpen={true}>
-          <MarketPulse />
-        </CollapsibleSection>
-
-        {/* ALERTS HISTORY */}
-        <CollapsibleSection
-          title="Alerts History"
-          icon={<Bell className="h-3 w-3 text-muted-foreground/60" />}
-          badge={alerts.length}
-          defaultOpen={false}
-        >
-          <div className="rounded-lg border border-white/8 bg-card overflow-hidden">
-            <AlertsTable alerts={alerts} />
-          </div>
-        </CollapsibleSection>
-
-        {/* EXPLORE */}
-        <CollapsibleSection title="Explore" defaultOpen={false}>
-          <MarketTable />
-        </CollapsibleSection>
+        {/* MARKET — flat tab nav: Analysts | Investors | Politicians | Alerts | Explore */}
+        <MarketTabs alerts={alerts} />
       </main>
     </div>
   );
