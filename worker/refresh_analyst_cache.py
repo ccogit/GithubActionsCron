@@ -7,6 +7,7 @@ by doing the heavy lifting directly in the runner.
 import os
 import sys
 import time
+from datetime import datetime, timezone
 from typing import Optional
 
 import requests
@@ -132,7 +133,6 @@ def main() -> int:
 
     updated = 0
     skipped_no_target = 0
-    skipped_no_price = 0
     failed = 0
 
     print(f"Processing {len(SYMBOLS)} symbols...")
@@ -144,9 +144,17 @@ def main() -> int:
                 skipped_no_target += 1
                 if i % 20 == 0:
                     print(f"  [{i+1}/{len(SYMBOLS)}] {symbol}: no target")
+                # Polite rate-limit even on miss (we still hit Yahoo)
+                time.sleep(0.3)
                 continue
 
-            # Get latest price from price_ticks
+            target = float(result["target"])
+
+            # Optional: enrich with current price from price_ticks (only present
+            # for symbols in user's watchlist). The aggregator computes upside
+            # against fresh quotes, so this is informational only.
+            current_price = None
+            upside = None
             tick_res = (
                 db.table("price_ticks")
                 .select("price")
@@ -155,14 +163,9 @@ def main() -> int:
                 .limit(1)
                 .execute()
             )
-
-            if not tick_res.data:
-                skipped_no_price += 1
-                continue
-
-            current_price = float(tick_res.data[0]["price"])
-            target = float(result["target"])
-            upside = ((target - current_price) / current_price) * 100
+            if tick_res.data:
+                current_price = float(tick_res.data[0]["price"])
+                upside = ((target - current_price) / current_price) * 100
 
             db.table("analyst_cache").upsert(
                 {
@@ -171,15 +174,17 @@ def main() -> int:
                     "current_price": current_price,
                     "upside_pct": upside,
                     "n_analysts": result.get("n_analysts"),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
                 },
                 on_conflict="symbol",
             ).execute()
 
             updated += 1
             if i % 10 == 0:
-                print(f"  [{i+1}/{len(SYMBOLS)}] {symbol}: ${current_price:.2f} → ${target:.2f} ({upside:+.1f}%)")
+                price_str = f"${current_price:.2f}" if current_price else "—"
+                upside_str = f"{upside:+.1f}%" if upside is not None else "(no live price)"
+                print(f"  [{i+1}/{len(SYMBOLS)}] {symbol}: {price_str} → ${target:.2f} {upside_str}")
 
-            # Polite rate-limit on Yahoo
             time.sleep(0.3)
 
         except Exception as e:
@@ -190,7 +195,6 @@ def main() -> int:
     print("=" * 50)
     print(f"Updated:           {updated}")
     print(f"No analyst target: {skipped_no_target}")
-    print(f"No price tick:     {skipped_no_price}")
     print(f"Failed:            {failed}")
     print("=" * 50)
 
