@@ -1,59 +1,91 @@
 "use client";
 
 import {
-  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+  AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts";
 import { format } from "date-fns";
 import type { PriceTick } from "@/lib/types";
 
-const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899"];
-
 type Props = {
   ticks: PriceTick[];
-  symbols: string[];
+  symbol: string;
+  color: string;
 };
 
-export function PriceChart({ ticks, symbols }: Props) {
-  // Pivot ticks into [{fetched_at, AAPL: 123, GOOG: 456}, ...]
-  const byTime: Record<string, Record<string, number>> = {};
-  for (const tick of ticks) {
-    const key = tick.fetched_at;
-    byTime[key] = byTime[key] ?? {};
-    byTime[key][tick.symbol] = tick.price;
+export function PriceChart({ ticks, symbol, color }: Props) {
+  if (ticks.length === 0) {
+    return (
+      <div className="h-32 flex items-center justify-center text-xs text-muted-foreground font-mono">
+        No price data yet
+      </div>
+    );
   }
 
-  const data = Object.entries(byTime)
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([time, prices]) => ({
-      time: format(new Date(time), "HH:mm"),
-      ...prices,
+  const data = [...ticks]
+    .sort((a, b) => a.fetched_at.localeCompare(b.fetched_at))
+    .map((tick) => ({
+      time: format(new Date(tick.fetched_at), "HH:mm"),
+      price: tick.price,
     }));
 
-  if (data.length === 0) {
-    return <p className="text-sm text-muted-foreground">No price data yet.</p>;
-  }
+  const prices = data.map((d) => d.price);
+  const minP = Math.min(...prices);
+  const maxP = Math.max(...prices);
+  const padding = (maxP - minP) * 0.15 || 1;
 
   return (
-    <ResponsiveContainer width="100%" height={280}>
-      <LineChart data={data} margin={{ top: 4, right: 16, left: 0, bottom: 4 }}>
-        <CartesianGrid strokeDasharray="3 3" className="stroke-muted" />
-        <XAxis dataKey="time" tick={{ fontSize: 11 }} />
-        <YAxis tick={{ fontSize: 11 }} domain={["auto", "auto"]} />
-        <Tooltip
-          contentStyle={{ fontSize: 12 }}
-          formatter={(v) => [`$${Number(v).toFixed(2)}`]}
+    <ResponsiveContainer width="100%" height={140}>
+      <AreaChart data={data} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
+        <defs>
+          <linearGradient id={`grad-${symbol}`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={0.25} />
+            <stop offset="100%" stopColor={color} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <CartesianGrid
+          strokeDasharray="3 3"
+          stroke="rgba(255,255,255,0.04)"
+          vertical={false}
         />
-        {symbols.map((sym, i) => (
-          <Line
-            key={sym}
-            type="monotone"
-            dataKey={sym}
-            stroke={COLORS[i % COLORS.length]}
-            dot={false}
-            strokeWidth={2}
-          />
-        ))}
-      </LineChart>
+        <XAxis
+          dataKey="time"
+          tick={{ fontSize: 9, fill: "rgba(255,255,255,0.3)", fontFamily: "var(--font-jetbrains)" }}
+          axisLine={false}
+          tickLine={false}
+          interval="preserveStartEnd"
+        />
+        <YAxis
+          tick={{ fontSize: 9, fill: "rgba(255,255,255,0.3)", fontFamily: "var(--font-jetbrains)" }}
+          axisLine={false}
+          tickLine={false}
+          domain={[minP - padding, maxP + padding]}
+          tickFormatter={(v) => `$${Number(v).toFixed(0)}`}
+          width={52}
+        />
+        <Tooltip
+          contentStyle={{
+            backgroundColor: "oklch(0.1 0.022 248)",
+            border: "1px solid rgba(255,255,255,0.1)",
+            borderRadius: "6px",
+            fontSize: "11px",
+            fontFamily: "var(--font-jetbrains), monospace",
+            color: "rgba(255,255,255,0.85)",
+            boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
+          }}
+          labelStyle={{ color: "rgba(255,255,255,0.4)", marginBottom: 2 }}
+          formatter={(v: number) => [`$${v.toFixed(2)}`, symbol]}
+          cursor={{ stroke: "rgba(255,255,255,0.1)", strokeWidth: 1 }}
+        />
+        <Area
+          type="monotone"
+          dataKey="price"
+          stroke={color}
+          strokeWidth={1.5}
+          fill={`url(#grad-${symbol})`}
+          dot={false}
+          activeDot={{ r: 3, fill: color, strokeWidth: 0 }}
+        />
+      </AreaChart>
     </ResponsiveContainer>
   );
 }
