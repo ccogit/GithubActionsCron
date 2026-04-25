@@ -5,9 +5,9 @@ import { RealtimeWatchlist } from "@/components/RealtimeWatchlist";
 import { CollapsibleSection } from "@/components/CollapsibleSection";
 import { AddStockForms } from "@/components/AddStockForms";
 import { AlertsTable } from "@/components/AlertsTable";
-import { MarketAggregates } from "@/components/MarketAggregates";
 import { MarketTable } from "@/components/MarketTable";
-import { PoliticianTrades } from "@/components/PoliticianTrades";
+import { MarketPulse } from "@/components/MarketPulse";
+import { StockSpotlight } from "@/components/StockSpotlight";
 import type { WatchlistRow, PriceTick, AlertLogRow } from "@/lib/types";
 import type { Holding } from "@/components/StocksTable";
 
@@ -65,46 +65,62 @@ export default async function StocksPage() {
     changes[h.symbol] = ((last - first) / first) * 100;
   }
 
+  // Calculate alert counts per symbol
+  const alertCountsBySymbol: Record<string, number> = {};
+  for (const alert of alerts) {
+    alertCountsBySymbol[alert.symbol] = (alertCountsBySymbol[alert.symbol] || 0) + 1;
+  }
+
+  const ownedSymbols = holdings.map((h) => h.symbol);
+
   return (
     <div className="min-h-screen">
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-10">
+        {/* MY PORTFOLIO */}
         <CollapsibleSection
-          title="My Stocks"
+          title="My Portfolio"
           defaultOpen={true}
           headerActions={<AddStockForms />}
         >
-          <RealtimeWatchlist
-            holdings={holdings}
-            initialLatestPrices={latestPrices}
-            initialChanges={changes}
-            initialTicksBySymbol={ticksBySymbol}
-            colors={CHART_COLORS}
-          />
+          <div className="space-y-6">
+            {/* Holdings Table */}
+            <RealtimeWatchlist
+              holdings={holdings}
+              initialLatestPrices={latestPrices}
+              initialChanges={changes}
+              initialTicksBySymbol={ticksBySymbol}
+              colors={CHART_COLORS}
+            />
+
+            {/* Stock Spotlight - Personalized Signals */}
+            {ownedSymbols.length > 0 && (
+              <div className="border-t border-white/10 pt-6">
+                <h3 className="text-sm font-semibold mb-4">Personalized Signals</h3>
+                <StockSpotlight symbols={ownedSymbols} alertCounts={alertCountsBySymbol} />
+              </div>
+            )}
+          </div>
         </CollapsibleSection>
 
+        {/* MARKET PULSE */}
+        <CollapsibleSection title="Market Pulse" defaultOpen={true}>
+          <MarketPulse />
+        </CollapsibleSection>
+
+        {/* ALERTS HISTORY */}
         <CollapsibleSection
-          title="Recent Alerts"
+          title="Alerts History"
           icon={<Bell className="h-3 w-3 text-muted-foreground/60" />}
           badge={alerts.length}
+          defaultOpen={false}
         >
           <div className="rounded-lg border border-white/8 bg-card overflow-hidden">
             <AlertsTable alerts={alerts} />
           </div>
         </CollapsibleSection>
 
-        <CollapsibleSection title="Market Overview" defaultOpen={true}>
-          <div className="space-y-8">
-            <MarketAggregates />
-            <div className="border-t border-white/10 pt-8">
-              <h3 className="text-sm font-semibold text-muted-foreground mb-4 uppercase tracking-wide">
-                Capitol Trends
-              </h3>
-              <PoliticianTrades />
-            </div>
-          </div>
-        </CollapsibleSection>
-
-        <CollapsibleSection title="Explore">
+        {/* EXPLORE */}
+        <CollapsibleSection title="Explore" defaultOpen={false}>
           <MarketTable />
         </CollapsibleSection>
       </main>
