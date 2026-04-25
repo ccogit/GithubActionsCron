@@ -14,7 +14,7 @@ SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
 FINNHUB_KEY = os.environ["FINNHUB_API_KEY"]
 RESEND_KEY = os.environ["RESEND_API_KEY"]
-ALERT_TO = "christopher.ridder@gmail.com"
+ALERT_TO = "christopher.ridder@googlemail.com"
 
 resend.api_key = RESEND_KEY
 
