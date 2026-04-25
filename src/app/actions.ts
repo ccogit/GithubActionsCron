@@ -16,7 +16,7 @@ export async function addSymbol(
   const min_price = parseFloat((formData.get("min_price") as string) || "0");
   if (!symbol) return { error: "Symbol is required." };
 
-  const db = await createClient();
+  const db = createClient();
   const { error } = await db
     .from("watchlist")
     .upsert({ symbol, min_price }, { onConflict: "symbol" });
@@ -28,13 +28,13 @@ export async function addSymbol(
 }
 
 export async function removeSymbol(symbol: string) {
-  const db = await createClient();
+  const db = createClient();
   await db.from("watchlist").delete().eq("symbol", symbol);
   revalidateWatchlist();
 }
 
 export async function updateMinPrice(symbol: string, min_price: number) {
-  const db = await createClient();
+  const db = createClient();
   await db.from("watchlist").update({ min_price }).eq("symbol", symbol);
   revalidateWatchlist();
 }

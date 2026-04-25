@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 const ACCENT = "#00c896";
 
 export async function WatchlistWidget() {
-  const db = await createClient();
+  const db = createClient();
 
   const [watchlistRes, ticksRes] = await Promise.all([
     db.from("watchlist").select("*").order("created_at"),

@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 const ACCENT = "#ef4444";
 
 export async function AlertsWidget() {
-  const db = await createClient();
+  const db = createClient();
   const { data } = await db
     .from("alert_log")
     .select("*")

@@ -12,7 +12,7 @@ export const revalidate = 60;
 const CHART_COLORS = ["#00c896", "#3b82f6", "#f59e0b", "#e879f9", "#34d399", "#fb923c"];
 
 export default async function WatchlistPage() {
-  const db = await createClient();
+  const db = createClient();
 
   const [watchlistRes, ticksRes, alertsRes] = await Promise.all([
     db.from("watchlist").select("*").order("created_at"),
