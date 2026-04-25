@@ -4,7 +4,6 @@ import { RealtimeWatchlist } from "@/components/RealtimeWatchlist";
 import { CollapsibleSection } from "@/components/CollapsibleSection";
 import { AddStockForms } from "@/components/AddStockForms";
 import { MarketTabs } from "@/components/MarketTabs";
-import { StockSpotlight } from "@/components/StockSpotlight";
 import type { WatchlistRow, PriceTick, AlertLogRow } from "@/lib/types";
 import type { Holding } from "@/components/StocksTable";
 
@@ -79,26 +78,21 @@ export default async function StocksPage() {
           defaultOpen={true}
           headerActions={<AddStockForms />}
         >
-          <div className="space-y-6">
-            <RealtimeWatchlist
-              holdings={holdings}
-              initialLatestPrices={latestPrices}
-              initialChanges={changes}
-              initialTicksBySymbol={ticksBySymbol}
-              colors={CHART_COLORS}
-            />
-
-            {ownedSymbols.length > 0 && (
-              <div className="border-t border-white/10 pt-6">
-                <h3 className="text-sm font-semibold mb-4">Personalized Signals</h3>
-                <StockSpotlight symbols={ownedSymbols} alertCounts={alertCountsBySymbol} />
-              </div>
-            )}
-          </div>
+          <RealtimeWatchlist
+            holdings={holdings}
+            initialLatestPrices={latestPrices}
+            initialChanges={changes}
+            initialTicksBySymbol={ticksBySymbol}
+            colors={CHART_COLORS}
+          />
         </CollapsibleSection>
 
-        {/* MARKET — flat tab nav: Analysts | Investors | Politicians | Alerts | Explore */}
-        <MarketTabs alerts={alerts} />
+        {/* MARKET — flat tab nav: Analysts | Investors | Politicians | Spotlight | Alerts | Explore */}
+        <MarketTabs
+          alerts={alerts}
+          ownedSymbols={ownedSymbols}
+          alertCountsBySymbol={alertCountsBySymbol}
+        />
       </main>
     </div>
   );

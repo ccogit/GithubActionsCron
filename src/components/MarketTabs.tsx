@@ -1,15 +1,16 @@
 'use client';
 
 import { useState, useEffect, type ReactNode } from 'react';
-import { TrendingUp, Activity, Landmark, Bell, Compass } from 'lucide-react';
+import { TrendingUp, Activity, Landmark, Bell, Compass, Sparkles } from 'lucide-react';
 import { AnalystsView } from '@/components/market/AnalystsView';
 import { InvestorsView } from '@/components/market/InvestorsView';
 import { PoliticianTrades } from '@/components/PoliticianTrades';
 import { AlertsTable } from '@/components/AlertsTable';
 import { MarketTable } from '@/components/MarketTable';
+import { StockSpotlight } from '@/components/StockSpotlight';
 import type { AlertLogRow } from '@/lib/types';
 
-type TabId = 'analysts' | 'investors' | 'politicians' | 'alerts' | 'explore';
+type TabId = 'analysts' | 'investors' | 'politicians' | 'spotlight' | 'alerts' | 'explore';
 
 interface Aggregates {
   hotStocks: any[];
@@ -53,7 +54,13 @@ function TabButton({
   );
 }
 
-export function MarketTabs({ alerts }: { alerts: AlertLogRow[] }) {
+interface MarketTabsProps {
+  alerts: AlertLogRow[];
+  ownedSymbols: string[];
+  alertCountsBySymbol: Record<string, number>;
+}
+
+export function MarketTabs({ alerts, ownedSymbols, alertCountsBySymbol }: MarketTabsProps) {
   const [active, setActive] = useState<TabId>('analysts');
   const [aggregates, setAggregates] = useState<Aggregates | null>(null);
 
@@ -69,8 +76,8 @@ export function MarketTabs({ alerts }: { alerts: AlertLogRow[] }) {
 
   return (
     <section>
-      {/* Tab nav — participants left, utility right */}
-      <div className="flex items-end border-b border-white/10 overflow-x-auto">
+      {/* Tab nav — participants left, utility right. Wraps on narrow viewports. */}
+      <div className="flex flex-wrap items-end gap-y-1 border-b border-white/10">
         <div className="flex">
           <TabButton
             id="analysts"
@@ -96,6 +103,15 @@ export function MarketTabs({ alerts }: { alerts: AlertLogRow[] }) {
         </div>
         <div className="flex-1" />
         <div className="flex">
+          {ownedSymbols.length > 0 && (
+            <TabButton
+              id="spotlight"
+              active={active}
+              onSelect={setActive}
+              icon={<Sparkles className="w-4 h-4" />}
+              label="Spotlight"
+            />
+          )}
           <TabButton
             id="alerts"
             active={active}
@@ -131,6 +147,10 @@ export function MarketTabs({ alerts }: { alerts: AlertLogRow[] }) {
           ))}
 
         {active === 'politicians' && <PoliticianTrades />}
+
+        {active === 'spotlight' && (
+          <StockSpotlight symbols={ownedSymbols} alertCounts={alertCountsBySymbol} />
+        )}
 
         {active === 'alerts' && (
           <div className="rounded-lg border border-white/8 bg-card overflow-hidden">
