@@ -1,9 +1,11 @@
 """
-Single-pass stock price tick: fetch → store → alert.
+Single-pass stock price tick: fetch → store → alert → sell.
 Triggered once per minute via repository_dispatch from cron-job.org.
 """
 
+import json
 import os
+import urllib.request
 from datetime import datetime, timezone
 
 import finnhub
@@ -15,6 +17,10 @@ SUPABASE_KEY = os.environ["SUPABASE_SERVICE_ROLE"]
 FINNHUB_KEY = os.environ["FINNHUB_API_KEY"]
 RESEND_KEY = os.environ["RESEND_API_KEY"]
 ALERT_TO = "christopher.ridder@googlemail.com"
+
+ALPACA_KEY = os.environ.get("ALPACA_KEY", "")
+ALPACA_SECRET = os.environ.get("ALPACA_SECRET", "")
+ALPACA_ENDPOINT = os.environ.get("ALPACA_ENDPOINT", "https://paper-api.alpaca.markets/v2")
 
 resend.api_key = RESEND_KEY
 
@@ -50,6 +56,50 @@ def send_alert(symbol: str, price: float, min_price: float) -> None:
             f"<p>Triggered at {datetime.now(timezone.utc).isoformat()}</p>"
         ),
     })
+
+
+def alpaca_sell(symbol: str) -> None:
+    if not ALPACA_KEY or not ALPACA_SECRET:
+        print("  [alpaca] skipped — ALPACA_KEY/SECRET not configured")
+        return
+
+    auth_headers = {
+        "APCA-API-KEY-ID": ALPACA_KEY,
+        "APCA-API-SECRET-KEY": ALPACA_SECRET,
+    }
+
+    # Resolve available qty from open position; default to 1 if not held
+    qty = "1"
+    try:
+        req = urllib.request.Request(
+            f"{ALPACA_ENDPOINT}/positions/{symbol}",
+            headers=auth_headers,
+        )
+        with urllib.request.urlopen(req, timeout=10) as r:
+            pos = json.loads(r.read())
+            available = pos.get("qty_available") or pos.get("qty") or "1"
+            if float(available) > 0:
+                qty = available
+    except Exception as exc:
+        print(f"  [alpaca] position lookup failed: {exc} — defaulting qty=1")
+
+    body = json.dumps({
+        "symbol": symbol,
+        "qty": qty,
+        "side": "sell",
+        "type": "market",
+        "time_in_force": "day",
+    }).encode()
+
+    req = urllib.request.Request(
+        f"{ALPACA_ENDPOINT}/orders",
+        data=body,
+        headers={**auth_headers, "Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=10) as r:
+        order = json.loads(r.read())
+        print(f"  [alpaca] sell {qty} {symbol} → order id={order.get('id')}")
 
 
 def run() -> None:
@@ -88,6 +138,11 @@ def run() -> None:
             if datetime.now(timezone.utc) >= cooldown_dt:
                 print(f"  [alert] {symbol} @ ${price:.2f} < ${min_price:.2f} — sending email")
                 send_alert(symbol, price, min_price)
+
+                try:
+                    alpaca_sell(symbol)
+                except Exception as exc:
+                    print(f"  [alpaca] error placing sell order: {exc}")
 
                 # Insert alert log
                 db.from_("alert_log").insert({

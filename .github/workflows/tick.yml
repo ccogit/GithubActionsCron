@@ -32,4 +32,7 @@ jobs:
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          ALPACA_KEY: ${{ secrets.ALPACA_KEY }}
+          ALPACA_SECRET: ${{ secrets.ALPACA_SECRET }}
+          ALPACA_ENDPOINT: ${{ secrets.ALPACA_ENDPOINT }}
         run: uv run python tick.py

@@ -54,30 +54,6 @@ export default async function Home() {
     <div className="min-h-screen">
       <AutoRefresh intervalMs={60_000} />
 
-      {/* Header */}
-      <header className="border-b border-white/6 bg-card/60 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-base font-semibold tracking-[0.18em] uppercase text-foreground">
-                Stock Watcher
-              </h1>
-              <span className="flex items-center gap-1.5 text-xs font-mono text-emerald-400">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                LIVE
-              </span>
-            </div>
-            <p className="text-xs text-muted-foreground mt-0.5 font-mono">
-              Refreshes every 60s · alerts → christopher.ridder@gmail.com
-            </p>
-          </div>
-          <div className="hidden sm:flex items-center gap-6 text-xs font-mono text-muted-foreground">
-            <span>{watchlist.length} symbol{watchlist.length !== 1 ? "s" : ""}</span>
-            <span>{alerts.length} alert{alerts.length !== 1 ? "s" : ""}</span>
-          </div>
-        </div>
-      </header>
-
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-10">
 
         {/* Watchlist */}
