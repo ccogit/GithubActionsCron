@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, Fragment } from "react";
-import { Trash2, Check, X, TrendingUp, TrendingDown, ArrowDownToLine, ShoppingCart, ChevronDown } from "lucide-react";
+import { useState, Fragment, type ReactNode } from "react";
+import { Trash2, Check, X, TrendingUp, TrendingDown, ArrowDownToLine, ShoppingCart, ChevronDown, Newspaper, Landmark, Sparkles } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { removeSymbol, updateMinPrice } from "@/app/actions";
 import { closePositionAction, placeOrderAction } from "@/app/alpaca-actions";
@@ -15,15 +15,114 @@ export type Holding = {
   position: AlpacaPosition | null;
 };
 
+export type SymbolSignals = {
+  upside_pct?: number | null;
+  news_sentiment?: number | null;
+  buy_count?: number;
+  sell_count?: number;
+  trends_direction?: string | null;
+};
+
 type Props = {
   holdings: Holding[];
   latestPrices: Record<string, number>;
   changes: Record<string, number | null>;
   colors: string[];
   ticksBySymbol: Record<string, PriceTick[]>;
+  signals?: Record<string, SymbolSignals>;
 };
 
-export function StocksTable({ holdings, latestPrices, changes, colors, ticksBySymbol }: Props) {
+function SignalPill({
+  icon,
+  children,
+  tone,
+  title,
+}: {
+  icon: ReactNode;
+  children: ReactNode;
+  tone: "green" | "red" | "yellow" | "blue" | "gray";
+  title?: string;
+}) {
+  const tones = {
+    green: "bg-green-500/10 text-green-300",
+    red: "bg-red-500/10 text-red-300",
+    yellow: "bg-yellow-500/10 text-yellow-300",
+    blue: "bg-blue-500/10 text-blue-300",
+    gray: "bg-white/5 text-muted-foreground",
+  };
+  return (
+    <div
+      title={title}
+      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium ${tones[tone]}`}
+    >
+      <span className="opacity-80">{icon}</span>
+      {children}
+    </div>
+  );
+}
+
+function SignalsCell({ s }: { s?: SymbolSignals }) {
+  if (!s) return <span className="text-muted-foreground font-mono text-xs">—</span>;
+
+  const congressTotal = (s.buy_count ?? 0) + (s.sell_count ?? 0);
+  const hasAny =
+    s.upside_pct != null ||
+    s.news_sentiment != null ||
+    congressTotal > 0 ||
+    (s.trends_direction && s.trends_direction !== "stable");
+
+  if (!hasAny) return <span className="text-muted-foreground font-mono text-xs">—</span>;
+
+  return (
+    <div className="flex flex-wrap gap-1 justify-end">
+      {s.upside_pct != null && (
+        <SignalPill
+          icon={<Sparkles className="w-2.5 h-2.5" />}
+          tone={s.upside_pct > 5 ? "green" : s.upside_pct < -3 ? "red" : "gray"}
+          title="Analyst upside"
+        >
+          {s.upside_pct > 0 ? "+" : ""}
+          {s.upside_pct.toFixed(0)}%
+        </SignalPill>
+      )}
+      {congressTotal > 0 && (
+        <SignalPill
+          icon={<Landmark className="w-2.5 h-2.5" />}
+          tone={(s.buy_count ?? 0) > (s.sell_count ?? 0) ? "green" : (s.sell_count ?? 0) > (s.buy_count ?? 0) ? "red" : "yellow"}
+          title="Congressional trades (buys / sells)"
+        >
+          {s.buy_count ?? 0}/{s.sell_count ?? 0}
+        </SignalPill>
+      )}
+      {s.news_sentiment != null && (
+        <SignalPill
+          icon={<Newspaper className="w-2.5 h-2.5" />}
+          tone={s.news_sentiment > 0.1 ? "green" : s.news_sentiment < -0.1 ? "red" : "yellow"}
+          title="News sentiment"
+        >
+          {(s.news_sentiment * 100).toFixed(0)}%
+        </SignalPill>
+      )}
+      {s.trends_direction && s.trends_direction !== "stable" && (
+        <SignalPill
+          icon={
+            s.trends_direction === "rising" ? (
+              <TrendingUp className="w-2.5 h-2.5" />
+            ) : (
+              <TrendingDown className="w-2.5 h-2.5" />
+            )
+          }
+          tone={s.trends_direction === "rising" ? "green" : "red"}
+          title="Search interest trend"
+        >
+          {s.trends_direction}
+        </SignalPill>
+      )}
+    </div>
+  );
+}
+
+export function StocksTable({ holdings, latestPrices, changes, colors, ticksBySymbol, signals }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
@@ -84,6 +183,7 @@ export function StocksTable({ holdings, latestPrices, changes, colors, ticksBySy
             <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">2h Chg</th>
             <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Holding</th>
             <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">P&amp;L</th>
+            <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Signals</th>
             <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Alert at</th>
             <th className="text-center py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Status</th>
             <th className="w-36" />
@@ -206,6 +306,11 @@ export function StocksTable({ holdings, latestPrices, changes, colors, ticksBySy
                   )}
                 </td>
 
+                {/* Signals */}
+                <td className="py-3 px-3 text-right">
+                  <SignalsCell s={signals?.[h.symbol]} />
+                </td>
+
                 {/* Alert at (editable when watching) */}
                 <td className="py-3 px-3 text-right">
                   {isWatch && editingId === h.watch!.id ? (
@@ -325,7 +430,7 @@ export function StocksTable({ holdings, latestPrices, changes, colors, ticksBySy
               </tr>
               {isSelected && (
                 <tr>
-                  <td colSpan={8} className="px-4 pb-5 pt-1 bg-white/[0.015] border-b border-white/4">
+                  <td colSpan={9} className="px-4 pb-5 pt-1 bg-white/[0.015] border-b border-white/4">
                     <StockChartPanel
                       symbol={h.symbol}
                       color={color}

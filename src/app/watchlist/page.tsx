@@ -5,7 +5,7 @@ import { CollapsibleSection } from "@/components/CollapsibleSection";
 import { AddStockForms } from "@/components/AddStockForms";
 import { MarketTabs } from "@/components/MarketTabs";
 import type { WatchlistRow, PriceTick, AlertLogRow } from "@/lib/types";
-import type { Holding } from "@/components/StocksTable";
+import type { Holding, SymbolSignals } from "@/components/StocksTable";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +69,38 @@ export default async function StocksPage() {
 
   const ownedSymbols = holdings.map((h) => h.symbol);
 
+  // Fetch personalized signals for owned symbols (analyst upside + politician/sentiment data)
+  const signalsBySymbol: Record<string, SymbolSignals> = {};
+  if (ownedSymbols.length > 0) {
+    const [analystSignalsRes, politicianSignalsRes] = await Promise.all([
+      db
+        .from("analyst_cache")
+        .select("symbol, upside_pct")
+        .in("symbol", ownedSymbols),
+      db
+        .from("politician_trade_summary")
+        .select("symbol, buy_count, sell_count, news_sentiment, trends_direction")
+        .in("symbol", ownedSymbols),
+    ]);
+
+    for (const sym of ownedSymbols) signalsBySymbol[sym] = {};
+    for (const row of analystSignalsRes.data ?? []) {
+      signalsBySymbol[row.symbol] = {
+        ...signalsBySymbol[row.symbol],
+        upside_pct: row.upside_pct,
+      };
+    }
+    for (const row of politicianSignalsRes.data ?? []) {
+      signalsBySymbol[row.symbol] = {
+        ...signalsBySymbol[row.symbol],
+        buy_count: row.buy_count ?? 0,
+        sell_count: row.sell_count ?? 0,
+        news_sentiment: row.news_sentiment,
+        trends_direction: row.trends_direction,
+      };
+    }
+  }
+
   return (
     <div className="min-h-screen">
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-8">
@@ -84,15 +116,12 @@ export default async function StocksPage() {
             initialChanges={changes}
             initialTicksBySymbol={ticksBySymbol}
             colors={CHART_COLORS}
+            signals={signalsBySymbol}
           />
         </CollapsibleSection>
 
-        {/* MARKET — flat tab nav: Analysts | Investors | Politicians | Spotlight | Alerts | Explore */}
-        <MarketTabs
-          alerts={alerts}
-          ownedSymbols={ownedSymbols}
-          alertCountsBySymbol={alertCountsBySymbol}
-        />
+        {/* MARKET — flat tab nav: Spotlight | Analysts | Investors | Politicians | Alerts | Explore */}
+        <MarketTabs alerts={alerts} />
       </main>
     </div>
   );

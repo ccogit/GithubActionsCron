@@ -8,7 +8,12 @@ import {
   Newspaper,
   Landmark,
   Activity,
+  ShoppingCart,
+  Check,
+  X,
 } from 'lucide-react';
+import { placeOrderAction } from '@/app/alpaca-actions';
+import { Input } from '@/components/ui/input';
 
 interface DiscoveryStock {
   symbol: string;
@@ -66,6 +71,9 @@ function MiniPill({
 
 export function SpotlightDiscovery() {
   const [stocks, setStocks] = useState<DiscoveryStock[] | null>(null);
+  const [buyingSymbol, setBuyingSymbol] = useState<string | null>(null);
+  const [buyQty, setBuyQty] = useState('1');
+  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     fetch('/api/spotlight-discovery')
@@ -77,11 +85,34 @@ export function SpotlightDiscovery() {
       });
   }, []);
 
+  async function confirmBuy(symbol: string) {
+    const qty = parseInt(buyQty, 10);
+    if (!qty || qty < 1) return;
+    setSubmitting(true);
+    try {
+      const fd = new FormData();
+      fd.set('symbol', symbol);
+      fd.set('qty', String(qty));
+      fd.set('side', 'buy');
+      fd.set('type', 'market');
+      await placeOrderAction(fd);
+      setBuyingSymbol(null);
+      setBuyQty('1');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  function startBuy(symbol: string) {
+    setBuyingSymbol(symbol);
+    setBuyQty('1');
+  }
+
   if (!stocks) {
     return (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {[0, 1, 2, 3, 4, 5].map((i) => (
-          <div key={i} className="border border-white/8 rounded-lg p-4 bg-card animate-pulse h-36" />
+          <div key={i} className="border border-white/8 rounded-lg p-4 bg-card animate-pulse h-44" />
         ))}
       </div>
     );
@@ -101,24 +132,32 @@ export function SpotlightDiscovery() {
         const isBull = stock.outlook === 'bullish';
         const accentColor = isBull ? 'text-green-400' : 'text-red-400';
         const TrendIcon = isBull ? TrendingUp : TrendingDown;
+        const isBuying = buyingSymbol === stock.symbol;
 
         return (
           <div
             key={stock.symbol}
-            className="border border-white/10 rounded-lg p-4 bg-card hover:border-white/20 transition-colors"
+            className="border border-white/10 rounded-lg p-4 bg-card hover:border-white/20 transition-colors flex flex-col"
           >
             {/* Header */}
-            <div className="flex justify-between items-center mb-2">
-              <div>
-                <h4 className="font-semibold text-base tracking-tight">{stock.symbol}</h4>
-                {stock.exchange && (
-                  <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                    {stock.exchange}
+            <div className="flex justify-between items-start gap-2 mb-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-baseline gap-2">
+                  <h4 className="font-semibold text-base tracking-tight">{stock.symbol}</h4>
+                  {stock.exchange && (
+                    <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                      {stock.exchange}
+                    </span>
+                  )}
+                </div>
+                {stock.name && (
+                  <div className="text-xs text-muted-foreground/80 truncate" title={stock.name}>
+                    {stock.name}
                   </div>
                 )}
               </div>
               <div
-                className={`flex items-center gap-1 text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded border ${outlookStyles[stock.outlook]}`}
+                className={`flex items-center gap-1 text-[10px] uppercase tracking-wider font-semibold px-2 py-0.5 rounded border whitespace-nowrap ${outlookStyles[stock.outlook]}`}
               >
                 <TrendIcon className="w-3 h-3" />
                 {stock.outlook}
@@ -144,7 +183,7 @@ export function SpotlightDiscovery() {
             )}
 
             {/* Signal pills */}
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1 mb-3 flex-1">
               {stock.upside_pct != null && (
                 <MiniPill
                   icon={<Sparkles className="w-2.5 h-2.5" />}
@@ -160,7 +199,7 @@ export function SpotlightDiscovery() {
                 <MiniPill
                   icon={<Landmark className="w-2.5 h-2.5" />}
                   tone={stock.buy_count > stock.sell_count ? 'green' : 'red'}
-                  title="Congressional trades"
+                  title="Congressional trades (buys / sells)"
                 >
                   {stock.buy_count}/{stock.sell_count}
                 </MiniPill>
@@ -207,6 +246,53 @@ export function SpotlightDiscovery() {
                 >
                   {stock.trends_direction}
                 </MiniPill>
+              )}
+            </div>
+
+            {/* Buy action */}
+            <div className="pt-3 border-t border-white/10">
+              {isBuying ? (
+                <div className="flex items-center gap-1.5">
+                  <Input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={buyQty}
+                    onChange={(e) => setBuyQty(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') confirmBuy(stock.symbol);
+                      if (e.key === 'Escape') setBuyingSymbol(null);
+                    }}
+                    placeholder="Qty"
+                    className="h-8 text-xs font-mono bg-white/5 border-blue-500/30 focus:border-blue-400/60 focus:ring-blue-500/20"
+                    autoFocus
+                  />
+                  <button
+                    type="button"
+                    disabled={submitting}
+                    onClick={() => confirmBuy(stock.symbol)}
+                    className="h-8 px-2.5 rounded-md flex items-center gap-1 text-xs font-medium bg-blue-500/15 text-blue-400 hover:bg-blue-500/25 border border-blue-500/30 transition-colors disabled:opacity-50"
+                  >
+                    <Check className="w-3.5 h-3.5" />
+                    {submitting ? '...' : 'Buy'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setBuyingSymbol(null)}
+                    className="h-8 w-8 rounded-md flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-white/8 transition-colors"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => startBuy(stock.symbol)}
+                  className="w-full h-8 rounded-md flex items-center justify-center gap-1.5 text-xs font-medium text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 transition-colors"
+                >
+                  <ShoppingCart className="w-3.5 h-3.5" />
+                  Buy {stock.symbol}
+                </button>
               )}
             </div>
           </div>

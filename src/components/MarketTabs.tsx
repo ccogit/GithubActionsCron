@@ -7,7 +7,6 @@ import { InvestorsView } from '@/components/market/InvestorsView';
 import { PoliticianTrades } from '@/components/PoliticianTrades';
 import { AlertsTable } from '@/components/AlertsTable';
 import { MarketTable } from '@/components/MarketTable';
-import { StockSpotlight } from '@/components/StockSpotlight';
 import { SpotlightDiscovery } from '@/components/SpotlightDiscovery';
 import type { AlertLogRow } from '@/lib/types';
 
@@ -57,11 +56,9 @@ function TabButton({
 
 interface MarketTabsProps {
   alerts: AlertLogRow[];
-  ownedSymbols: string[];
-  alertCountsBySymbol: Record<string, number>;
 }
 
-export function MarketTabs({ alerts, ownedSymbols, alertCountsBySymbol }: MarketTabsProps) {
+export function MarketTabs({ alerts }: MarketTabsProps) {
   const [active, setActive] = useState<TabId>('spotlight');
   const [aggregates, setAggregates] = useState<Aggregates | null>(null);
 
@@ -131,6 +128,19 @@ export function MarketTabs({ alerts, ownedSymbols, alertCountsBySymbol }: Market
 
       {/* Tab content */}
       <div className="pt-6 min-h-[200px]">
+        {active === 'spotlight' && (
+          <div>
+            <div className="flex items-baseline gap-2 mb-1">
+              <Sparkles className="w-4 h-4 text-yellow-400 self-center" />
+              <h3 className="text-sm font-semibold">Cross-Signal Discovery</h3>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">
+              Stocks where signals from analysts, investors, and politicians most strongly agree.
+            </p>
+            <SpotlightDiscovery />
+          </div>
+        )}
+
         {active === 'analysts' &&
           (aggregates ? (
             <AnalystsView hotStocks={aggregates.hotStocks} />
@@ -146,33 +156,6 @@ export function MarketTabs({ alerts, ownedSymbols, alertCountsBySymbol }: Market
           ))}
 
         {active === 'politicians' && <PoliticianTrades />}
-
-        {active === 'spotlight' && (
-          <div className="space-y-8">
-            {/* Cross-signal discovery — most interesting stocks across all participants */}
-            <div>
-              <div className="flex items-baseline gap-2 mb-1">
-                <Sparkles className="w-4 h-4 text-yellow-400 self-center" />
-                <h3 className="text-sm font-semibold">Cross-Signal Discovery</h3>
-              </div>
-              <p className="text-xs text-muted-foreground mb-4">
-                Stocks where signals from analysts, investors, and politicians most strongly agree.
-              </p>
-              <SpotlightDiscovery />
-            </div>
-
-            {/* Personal holdings */}
-            {ownedSymbols.length > 0 && (
-              <div>
-                <h3 className="text-sm font-semibold mb-1">My Holdings</h3>
-                <p className="text-xs text-muted-foreground mb-4">
-                  Personalized signals for the stocks you own.
-                </p>
-                <StockSpotlight symbols={ownedSymbols} alertCounts={alertCountsBySymbol} />
-              </div>
-            )}
-          </div>
-        )}
 
         {active === 'alerts' && (
           <div className="rounded-lg border border-white/8 bg-card overflow-hidden">

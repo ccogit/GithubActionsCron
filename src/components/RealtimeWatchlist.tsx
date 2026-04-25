@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { StocksTable, type Holding } from "@/components/StocksTable";
+import { StocksTable, type Holding, type SymbolSignals } from "@/components/StocksTable";
 import { useRealtimeTicks } from "@/hooks/useRealtimeTicks";
 import type { PriceTick } from "@/lib/types";
 
@@ -10,6 +10,7 @@ interface RealtimeWatchlistProps {
   initialChanges: Record<string, number | null>;
   initialTicksBySymbol: Record<string, PriceTick[]>;
   colors: string[];
+  signals?: Record<string, SymbolSignals>;
 }
 
 export function RealtimeWatchlist({
@@ -17,6 +18,7 @@ export function RealtimeWatchlist({
   initialChanges,
   initialTicksBySymbol,
   colors,
+  signals,
 }: RealtimeWatchlistProps) {
   const symbols = holdings.map((h) => h.symbol);
   const { ticks, latestPrices } = useRealtimeTicks(symbols, initialTicksBySymbol);
@@ -46,6 +48,7 @@ export function RealtimeWatchlist({
         changes={changes}
         colors={colors}
         ticksBySymbol={ticks}
+        signals={signals}
       />
     </div>
   );
