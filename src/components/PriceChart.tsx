@@ -73,7 +73,7 @@ export function PriceChart({ ticks, symbol, color }: Props) {
             boxShadow: "0 8px 32px rgba(0,0,0,0.6)",
           }}
           labelStyle={{ color: "rgba(255,255,255,0.4)", marginBottom: 2 }}
-          formatter={(v: number) => [`$${v.toFixed(2)}`, symbol]}
+          formatter={(v) => [`$${Number(v).toFixed(2)}`, symbol]}
           cursor={{ stroke: "rgba(255,255,255,0.1)", strokeWidth: 1 }}
         />
         <Area
