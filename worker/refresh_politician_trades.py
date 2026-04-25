@@ -39,6 +39,16 @@ SYMBOLS = [
 ]
 
 
+def parse_reporting_gap(gap_str: Optional[str]) -> Optional[int]:
+    """Extract integer days from reporting gap string like '15 Days'."""
+    if not gap_str:
+        return None
+    try:
+        return int(gap_str.split()[0])
+    except (IndexError, ValueError):
+        return None
+
+
 def fetch_trades(symbol: str) -> list:
     """Fetch politician trades for a symbol from AInvest."""
     try:
@@ -60,6 +70,7 @@ def fetch_trades(symbol: str) -> list:
                 "symbol": symbol,
                 "trade_date": trade.get("trade_date"),
                 "filing_date": trade.get("filing_date"),
+                "reporting_gap": parse_reporting_gap(trade.get("reporting_gap")),
             }
             for trade in trades
         ]
