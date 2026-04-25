@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { signOut } from "@/app/auth/actions";
 
 const LINKS = [
   { href: "/", label: "Dashboard" },
@@ -10,7 +11,7 @@ const LINKS = [
   { href: "/orders", label: "Orders" },
 ];
 
-export function Nav() {
+export function Nav({ email }: { email?: string }) {
   const path = usePathname();
 
   return (
@@ -36,10 +37,25 @@ export function Nav() {
             ))}
           </div>
         </div>
-        <span className="flex items-center gap-1.5 text-xs font-mono text-emerald-400">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          LIVE
-        </span>
+        <div className="flex items-center gap-4">
+          <span className="flex items-center gap-1.5 text-xs font-mono text-emerald-400">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            LIVE
+          </span>
+          {email && (
+            <span className="hidden sm:block text-xs font-mono text-muted-foreground/60 truncate max-w-[160px]">
+              {email}
+            </span>
+          )}
+          <form action={signOut}>
+            <button
+              type="submit"
+              className="text-xs font-mono text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+            >
+              Sign out
+            </button>
+          </form>
+        </div>
       </div>
     </nav>
   );

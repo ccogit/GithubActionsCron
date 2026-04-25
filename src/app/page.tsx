@@ -4,15 +4,11 @@ import { WatchlistWidget } from "@/components/dashboard/WatchlistWidget";
 import { PortfolioWidget } from "@/components/dashboard/PortfolioWidget";
 import { OrdersWidget } from "@/components/dashboard/OrdersWidget";
 import { AlertsWidget } from "@/components/dashboard/AlertsWidget";
+import { BudgetHistoryWidget } from "@/components/dashboard/BudgetHistoryWidget";
 import { WidgetSkeleton } from "@/components/dashboard/WidgetSkeleton";
 
 export const dynamic = "force-dynamic";
 
-/*
- * To add a new dashboard widget:
- * 1. Create src/components/dashboard/YourWidget.tsx (async server component)
- * 2. Import it here and add one entry to WIDGETS below
- */
 const WIDGETS = [
   { id: "watchlist", Widget: WatchlistWidget },
   { id: "portfolio", Widget: PortfolioWidget },
@@ -34,6 +30,8 @@ export default function DashboardPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <BudgetHistoryWidget />
+
           {WIDGETS.map(({ id, Widget }) => (
             <Suspense key={id} fallback={<WidgetSkeleton />}>
               <Widget />
