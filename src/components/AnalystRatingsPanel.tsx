@@ -65,12 +65,20 @@ export function AnalystRatingsPanel({ symbol, currency }: Props) {
           <span className="text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
             Analyst Recommendations
           </span>
-          {data.numberOfAnalysts != null && (
-            <span className="text-[10px] font-mono text-muted-foreground/60">
-              {data.numberOfAnalysts} analysts
-            </span>
-          )}
+          <div className="flex items-center gap-2">
+            {data.overallRating && (
+              <span className="text-[10px] font-mono font-semibold text-amber-400">
+                {data.overallRating}
+              </span>
+            )}
+            {data.numberOfAnalysts != null && (
+              <span className="text-[10px] font-mono text-muted-foreground/60">
+                {data.numberOfAnalysts} analysts
+              </span>
+            )}
+          </div>
         </div>
+        {total > 0 ? (
         <div className="space-y-2">
           {bars.map(({ label, value, color }) => (
             <div key={label} className="flex items-center gap-2">
@@ -89,6 +97,11 @@ export function AnalystRatingsPanel({ symbol, currency }: Props) {
             </div>
           ))}
         </div>
+        ) : (
+          <p className="text-[10px] font-mono text-muted-foreground/50">
+            Detailed breakdown unavailable
+          </p>
+        )}
       </div>
 
       {/* Price targets */}

@@ -1,18 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
-
-const YAHOO_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-  "Accept": "application/json, text/plain, */*",
-  "Accept-Language": "de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7",
-  "Origin": "https://finance.yahoo.com",
-  "Referer": "https://finance.yahoo.com/",
-};
+import { ISIN_MAP } from "@/lib/market-data";
 
 const BF_HEADERS = {
   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-  "Accept": "application/json",
-  "Origin": "https://www.boerse-frankfurt.de",
-  "Referer": "https://www.boerse-frankfurt.de/",
+  Accept: "application/json",
+  Origin: "https://www.boerse-frankfurt.de",
+  Referer: "https://www.boerse-frankfurt.de/",
 };
 
 export type Knockout = {
@@ -36,23 +29,6 @@ export type DerivativesResult = {
   error: string | null;
 };
 
-async function getIsin(symbol: string): Promise<string | null> {
-  try {
-    const params = new URLSearchParams({ modules: "quoteType", lang: "en", region: "US" });
-    const res = await fetch(
-      `https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(symbol)}?${params}`,
-      { headers: YAHOO_HEADERS, cache: "no-store" }
-    );
-    if (!res.ok) return null;
-    const data = await res.json();
-    // Yahoo doesn't expose ISIN via quoteSummary; use their v11 details endpoint instead
-    const qt = data?.quoteSummary?.result?.[0]?.quoteType;
-    return qt?.quoteType === "EQUITY" ? null : null; // ISIN not reliably available
-  } catch {
-    return null;
-  }
-}
-
 async function fetchBoerseFrankfurtKnockouts(isin: string): Promise<Knockout[]> {
   try {
     const params = new URLSearchParams({
@@ -65,21 +41,21 @@ async function fetchBoerseFrankfurtKnockouts(isin: string): Promise<Knockout[]> 
     });
     const res = await fetch(
       `https://api.boerse-frankfurt.de/v2/search/derivatives?${params}`,
-      { headers: BF_HEADERS, cache: "no-store", signal: AbortSignal.timeout(5000) }
+      { headers: BF_HEADERS, cache: "no-store", signal: AbortSignal.timeout(6000) }
     );
     if (!res.ok) return [];
     const data = await res.json();
-    const items = data?.data ?? data?.results ?? [];
-    return items.slice(0, 20).map((item: Record<string, unknown>) => ({
-      isin: (item.isin as string) ?? "",
-      name: (item.name as string) ?? "",
+    const items: Record<string, unknown>[] = data?.data ?? data?.results ?? [];
+    return items.slice(0, 20).map((item) => ({
+      isin: String(item.isin ?? ""),
+      name: String(item.name ?? ""),
       type: String(item.optionType ?? item.knockoutType ?? "").toLowerCase().includes("put") ? "Put" : "Call",
       barrier: item.knockoutBarrier != null ? Number(item.knockoutBarrier) : null,
       strike: item.strike != null ? Number(item.strike) : null,
       ask: item.ask != null ? Number(item.ask) : null,
       bid: item.bid != null ? Number(item.bid) : null,
       leverage: item.leverageRatio != null ? Number(item.leverageRatio) : null,
-      issuer: (item.issuerName as string) ?? (item.issuer as string) ?? "",
+      issuer: String(item.issuerName ?? item.issuer ?? ""),
     }));
   } catch {
     return [];
@@ -87,8 +63,8 @@ async function fetchBoerseFrankfurtKnockouts(isin: string): Promise<Knockout[]> 
 }
 
 function buildLinks(symbol: string, isin: string | null): { label: string; url: string }[] {
-  const bare = symbol.replace(".DE", "").replace(".F", "");
-  const links = [
+  const bare = symbol.replace(/\.[A-Z]+$/, "");
+  return [
     {
       label: "Tradegate",
       url: isin
@@ -96,16 +72,16 @@ function buildLinks(symbol: string, isin: string | null): { label: string; url: 
         : `https://www.tradegate.de/suche.php?suche=${bare}`,
     },
     {
-      label: "Boerse Frankfurt",
+      label: "Börse Frankfurt",
       url: isin
         ? `https://www.boerse-frankfurt.de/derivatsuche?underlying=${isin}&category=knockouts`
-        : `https://www.boerse-frankfurt.de/derivatsuche?category=knockouts`,
+        : "https://www.boerse-frankfurt.de/derivatsuche?category=knockouts",
     },
     {
       label: "comdirect",
       url: isin
         ? `https://www.comdirect.de/inf/hebelprodukte/suche.html?UNDERLYING_ISIN=${isin}&PRODUCT_TYPE=KNOCKOUT`
-        : `https://www.comdirect.de/inf/hebelprodukte/suche.html`,
+        : "https://www.comdirect.de/inf/hebelprodukte/suche.html",
     },
     {
       label: "OnVista",
@@ -113,18 +89,19 @@ function buildLinks(symbol: string, isin: string | null): { label: string; url: 
     },
     {
       label: "Finanztreff",
-      url: `https://www.finanztreff.de/hebelprodukte/knockout/`,
+      url: isin
+        ? `https://www.finanztreff.de/hebelprodukte/knockout/?isin=${isin}`
+        : "https://www.finanztreff.de/hebelprodukte/knockout/",
     },
   ];
-  return links;
 }
 
 export async function GET(request: NextRequest) {
   const symbol = request.nextUrl.searchParams.get("symbol");
-  const isinParam = request.nextUrl.searchParams.get("isin");
   if (!symbol) return NextResponse.json({ error: "symbol required" }, { status: 400 });
 
-  const isin = isinParam ?? (await getIsin(symbol));
+  // Look up ISIN from static map (covers all index constituents)
+  const isin = ISIN_MAP[symbol] ?? null;
   const links = buildLinks(symbol, isin);
 
   let knockouts: Knockout[] = [];
@@ -133,10 +110,13 @@ export async function GET(request: NextRequest) {
 
   if (isin) {
     knockouts = await fetchBoerseFrankfurtKnockouts(isin);
-    if (knockouts.length > 0) source = "Börse Frankfurt";
-    else error = "No live knockout data available — use the links below to search";
+    if (knockouts.length > 0) {
+      source = "Börse Frankfurt";
+    } else {
+      error = "No knockouts returned by Börse Frankfurt — use the links below";
+    }
   } else {
-    error = "ISIN not resolved — use the links below to search by symbol";
+    error = "Symbol not in ISIN map — use the links below to search";
   }
 
   const result: DerivativesResult = { symbol, isin, knockouts, links, source, error };

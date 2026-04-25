@@ -7,7 +7,7 @@ import { addSymbol } from "@/app/actions";
 import { placeOrderAction } from "@/app/alpaca-actions";
 import { AnalystRatingsPanel } from "@/components/AnalystRatingsPanel";
 import { DerivativesPanel } from "@/components/DerivativesPanel";
-import { INDEX_STOCKS } from "@/lib/market-data";
+import { INDEX_STOCKS, ISIN_MAP } from "@/lib/market-data";
 import type { QuoteRow } from "@/app/api/market-quotes/route";
 
 const EXCHANGES = ["Dow Jones", "Nasdaq 100", "DAX"] as const;
@@ -293,7 +293,7 @@ export function MarketTable() {
                           {activePanel.type === "ratings" ? (
                             <AnalystRatingsPanel symbol={row.symbol} currency={row.currency} />
                           ) : (
-                            <DerivativesPanel symbol={row.symbol} />
+                            <DerivativesPanel symbol={row.symbol} isin={ISIN_MAP[row.symbol]} />
                           )}
                         </td>
                       </tr>
