@@ -18,7 +18,7 @@ export async function PortfolioWidget() {
 
   return (
     <Link
-      href="/portfolio"
+      href="/watchlist"
       className="group block rounded-lg border border-white/8 bg-card hover:border-white/16 transition-colors p-5"
     >
       {/* Header */}

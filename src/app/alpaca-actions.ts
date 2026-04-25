@@ -38,7 +38,8 @@ export async function placeOrderAction(formData: FormData) {
   });
 
   revalidatePath("/orders");
-  revalidatePath("/portfolio");
+  revalidatePath("/watchlist");
+  revalidatePath("/");
 }
 
 export async function cancelOrderAction(orderId: string) {
@@ -54,5 +55,6 @@ export async function closePositionAction(symbol: string) {
     method: "DELETE",
     headers: headers(),
   });
-  revalidatePath("/portfolio");
+  revalidatePath("/watchlist");
+  revalidatePath("/");
 }

@@ -3,14 +3,14 @@ Single-pass stock price tick: fetch → store → alert → sell.
 Triggered once per minute via repository_dispatch from cron-job.org.
 """
 
+import finnhub
 import json
 import os
+import resend
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
-import finnhub
-import resend
 from supabase import create_client, Client
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
