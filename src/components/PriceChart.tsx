@@ -21,17 +21,37 @@ export function PriceChart({ ticks, symbol, color }: Props) {
     );
   }
 
-  const data = [...ticks]
-    .sort((a, b) => a.fetched_at.localeCompare(b.fetched_at))
-    .map((tick) => ({
-      time: format(new Date(tick.fetched_at), "HH:mm"),
-      price: tick.price,
-    }));
+  const sortedTicks = [...ticks].sort((a, b) => a.fetched_at.localeCompare(b.fetched_at));
+
+  // Determine time span to format x-axis appropriately
+  const timeSpan = new Date(sortedTicks[sortedTicks.length - 1].fetched_at).getTime() -
+                   new Date(sortedTicks[0].fetched_at).getTime();
+  const hoursSpan = timeSpan / (1000 * 60 * 60);
+
+  // Choose format based on time span
+  let timeFormat = "HH:mm";
+  if (hoursSpan > 24 * 7) {
+    timeFormat = "MMM d";
+  } else if (hoursSpan > 24) {
+    timeFormat = "MMM d, HH:mm";
+  } else if (hoursSpan > 6) {
+    timeFormat = "HH:mm";
+  } else {
+    timeFormat = "HH:mm";
+  }
+
+  const data = sortedTicks.map((tick) => ({
+    time: format(new Date(tick.fetched_at), timeFormat),
+    price: tick.price,
+  }));
 
   const prices = data.map((d) => d.price);
   const minP = Math.min(...prices);
   const maxP = Math.max(...prices);
   const padding = (maxP - minP) * 0.15 || 1;
+
+  // Calculate interval to show ~4-6 x-axis labels
+  const interval = Math.ceil(data.length / 5) - 1;
 
   return (
     <ResponsiveContainer width="100%" height={140}>
@@ -52,7 +72,7 @@ export function PriceChart({ ticks, symbol, color }: Props) {
           tick={{ fontSize: 9, fill: "rgba(255,255,255,0.3)", fontFamily: "var(--font-jetbrains)" }}
           axisLine={false}
           tickLine={false}
-          interval="preserveStartEnd"
+          interval={interval}
         />
         <YAxis
           tick={{ fontSize: 9, fill: "rgba(255,255,255,0.3)", fontFamily: "var(--font-jetbrains)" }}
