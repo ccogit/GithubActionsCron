@@ -24,7 +24,9 @@
       "Bash(curl -s \"https://api.github.com/repos/ccogit/GithubActionsCron/actions/workflows/266281709/runs?per_page=3\")",
       "WebFetch(domain:finnhub.io)",
       "WebFetch(domain:site.financialmodelingprep.com)",
-      "Bash(pip install *)"
+      "Bash(pip install *)",
+      "Bash(curl -s \"https://query2.finance.yahoo.com/v7/finance/quote?symbols=SAP.DE,BMW.DE&lang=en&region=US\" -H \"User-Agent: Mozilla/5.0\")",
+      "Bash(curl -s \"https://query1.finance.yahoo.com/v8/finance/chart/SAP.DE?interval=1d&range=2d\" -H \"User-Agent: Mozilla/5.0\")"
     ]
   }
 }

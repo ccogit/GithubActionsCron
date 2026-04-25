@@ -58,29 +58,36 @@ async function fetchAlpacaQuotes(symbols: string[]): Promise<Record<string, RawQ
   }
 }
 
-async function fetchYahooQuotes(symbols: string[]): Promise<Record<string, RawQuote>> {
+async function fetchYahooChart(symbol: string): Promise<RawQuote | null> {
   try {
-    const params = new URLSearchParams({ symbols: symbols.join(","), lang: "en", region: "US" });
-    const res = await fetch(`https://query2.finance.yahoo.com/v7/finance/quote?${params}`, {
-      headers: YAHOO_HEADERS,
-      cache: "no-store",
-    });
-    if (!res.ok) return {};
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=2d`,
+      { headers: YAHOO_HEADERS, cache: "no-store" }
+    );
+    if (!res.ok) return null;
     const data = await res.json();
-    const results = data?.quoteResponse?.result ?? [];
-    const out: Record<string, RawQuote> = {};
-    for (const q of results) {
-      if (q.regularMarketPrice == null) continue;
-      out[q.symbol] = {
-        price: q.regularMarketPrice,
-        change: q.regularMarketChange ?? 0,
-        changePct: q.regularMarketChangePercent ?? 0,
-      };
-    }
-    return out;
+    const meta = data?.chart?.result?.[0]?.meta;
+    if (!meta) return null;
+    const price = meta.regularMarketPrice;
+    const prev = meta.chartPreviousClose ?? meta.previousClose;
+    if (price == null || prev == null) return null;
+    return {
+      price,
+      change: price - prev,
+      changePct: prev > 0 ? ((price - prev) / prev) * 100 : 0,
+    };
   } catch {
-    return {};
+    return null;
   }
+}
+
+async function fetchYahooQuotes(symbols: string[]): Promise<Record<string, RawQuote>> {
+  const results = await Promise.all(symbols.map((s) => fetchYahooChart(s).then((q) => [s, q] as const)));
+  const out: Record<string, RawQuote> = {};
+  for (const [sym, q] of results) {
+    if (q) out[sym] = q;
+  }
+  return out;
 }
 
 export async function fetchQuotesForExchange(exchange: string): Promise<QuoteRow[]> {
