@@ -8,9 +8,10 @@ import { PoliticianTrades } from '@/components/PoliticianTrades';
 import { AlertsTable } from '@/components/AlertsTable';
 import { MarketTable } from '@/components/MarketTable';
 import { StockSpotlight } from '@/components/StockSpotlight';
+import { SpotlightDiscovery } from '@/components/SpotlightDiscovery';
 import type { AlertLogRow } from '@/lib/types';
 
-type TabId = 'analysts' | 'investors' | 'politicians' | 'spotlight' | 'alerts' | 'explore';
+type TabId = 'spotlight' | 'analysts' | 'investors' | 'politicians' | 'alerts' | 'explore';
 
 interface Aggregates {
   hotStocks: any[];
@@ -61,7 +62,7 @@ interface MarketTabsProps {
 }
 
 export function MarketTabs({ alerts, ownedSymbols, alertCountsBySymbol }: MarketTabsProps) {
-  const [active, setActive] = useState<TabId>('analysts');
+  const [active, setActive] = useState<TabId>('spotlight');
   const [aggregates, setAggregates] = useState<Aggregates | null>(null);
 
   useEffect(() => {
@@ -76,9 +77,16 @@ export function MarketTabs({ alerts, ownedSymbols, alertCountsBySymbol }: Market
 
   return (
     <section>
-      {/* Tab nav — participants left, utility right. Wraps on narrow viewports. */}
+      {/* Tab nav — Spotlight first, participants in middle, utility right. Wraps on narrow viewports. */}
       <div className="flex flex-wrap items-end gap-y-1 border-b border-white/10">
         <div className="flex">
+          <TabButton
+            id="spotlight"
+            active={active}
+            onSelect={setActive}
+            icon={<Sparkles className="w-4 h-4" />}
+            label="Spotlight"
+          />
           <TabButton
             id="analysts"
             active={active}
@@ -103,15 +111,6 @@ export function MarketTabs({ alerts, ownedSymbols, alertCountsBySymbol }: Market
         </div>
         <div className="flex-1" />
         <div className="flex">
-          {ownedSymbols.length > 0 && (
-            <TabButton
-              id="spotlight"
-              active={active}
-              onSelect={setActive}
-              icon={<Sparkles className="w-4 h-4" />}
-              label="Spotlight"
-            />
-          )}
           <TabButton
             id="alerts"
             active={active}
@@ -149,7 +148,30 @@ export function MarketTabs({ alerts, ownedSymbols, alertCountsBySymbol }: Market
         {active === 'politicians' && <PoliticianTrades />}
 
         {active === 'spotlight' && (
-          <StockSpotlight symbols={ownedSymbols} alertCounts={alertCountsBySymbol} />
+          <div className="space-y-8">
+            {/* Cross-signal discovery — most interesting stocks across all participants */}
+            <div>
+              <div className="flex items-baseline gap-2 mb-1">
+                <Sparkles className="w-4 h-4 text-yellow-400 self-center" />
+                <h3 className="text-sm font-semibold">Cross-Signal Discovery</h3>
+              </div>
+              <p className="text-xs text-muted-foreground mb-4">
+                Stocks where signals from analysts, investors, and politicians most strongly agree.
+              </p>
+              <SpotlightDiscovery />
+            </div>
+
+            {/* Personal holdings */}
+            {ownedSymbols.length > 0 && (
+              <div>
+                <h3 className="text-sm font-semibold mb-1">My Holdings</h3>
+                <p className="text-xs text-muted-foreground mb-4">
+                  Personalized signals for the stocks you own.
+                </p>
+                <StockSpotlight symbols={ownedSymbols} alertCounts={alertCountsBySymbol} />
+              </div>
+            )}
+          </div>
         )}
 
         {active === 'alerts' && (
