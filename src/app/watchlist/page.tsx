@@ -4,9 +4,7 @@ import { RealtimeWatchlist } from "@/components/RealtimeWatchlist";
 import { CollapsibleSection } from "@/components/CollapsibleSection";
 import { AddStockForms } from "@/components/AddStockForms";
 import { MarketTabs } from "@/components/MarketTabs";
-import { RebalanceView } from "@/components/RebalanceView";
-import { RebalanceToggle } from "@/components/RebalanceToggle";
-import { RefreshSignalsButton } from "@/components/RefreshSignalsButton";
+import { DashboardControls } from "@/components/DashboardControls";
 import type { WatchlistRow, PriceTick, AlertLogRow } from "@/lib/types";
 import type { Holding, SymbolSignals } from "@/components/StocksTable";
 
@@ -102,7 +100,8 @@ export default async function StocksPage() {
   return (
     <div className="min-h-screen">
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-8">
-        <RefreshSignalsButton />
+        {/* Action strip: signal refresh left, rebalance toggle + panel right */}
+        <DashboardControls />
 
         {/* MY PORTFOLIO */}
         <CollapsibleSection
@@ -118,11 +117,6 @@ export default async function StocksPage() {
             colors={CHART_COLORS}
             signals={signalsBySymbol}
           />
-        </CollapsibleSection>
-
-        {/* DAILY REBALANCE — collapsed by default; preview-then-execute flow */}
-        <CollapsibleSection title="Daily Rebalance" defaultOpen={false} headerActions={<RebalanceToggle />}>
-          <RebalanceView />
         </CollapsibleSection>
 
         {/* MARKET — flat tab nav: Spotlight | Analysts | Investors | Politicians | Alerts | Explore */}
