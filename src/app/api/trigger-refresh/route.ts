@@ -1,5 +1,3 @@
-import { NextResponse } from "next/server";
-
 export const dynamic = "force-dynamic";
 
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN ?? "";
@@ -7,37 +5,22 @@ const GITHUB_REPO = process.env.GITHUB_REPO ?? "";
 const GITHUB_BRANCH = process.env.GITHUB_BRANCH ?? "main";
 
 // Ordered groups: each group fires in parallel; groups fire sequentially.
-// Dependencies:
-//   Step 1 — index_constituents (symbol universe; everything else reads it)
-//   Step 2 — analyst-cache + politician-trades (independent of each other)
-//   Step 3 — enrich-politician-signals (reads politician_trades rows)
-const WORKFLOW_GROUPS: string[][] = [
-  ["refresh-index-constituents.yml"],
-  ["refresh-analyst-cache.yml", "refresh-politician-trades.yml"],
-  ["enrich-politician-signals.yml"],
+//   Group 0 — index_constituents (symbol universe; prerequisite for all signal fetchers)
+//   Group 1 — analyst-cache + politician-trades (independent of each other)
+//   Group 2 — enrich-politician-signals (reads politician_trade_summary rows)
+const WORKFLOW_GROUPS: Array<{ workflow: string; name: string }[]> = [
+  [{ workflow: "refresh-index-constituents.yml", name: "Index Constituents" }],
+  [
+    { workflow: "refresh-analyst-cache.yml", name: "Analyst Cache" },
+    { workflow: "refresh-politician-trades.yml", name: "Politician Trades" },
+  ],
+  [{ workflow: "enrich-politician-signals.yml", name: "Enrich Signals" }],
 ];
 
-const WORKFLOW_NAMES: Record<string, string> = {
-  "refresh-index-constituents.yml": "Index Constituents",
-  "refresh-analyst-cache.yml": "Analyst Cache",
-  "refresh-politician-trades.yml": "Politician Trades",
-  "enrich-politician-signals.yml": "Enrich Signals",
-};
-
-interface StepResult {
-  workflow: string;
-  name: string;
-  ok: boolean;
-  error?: string;
-}
-
-async function dispatch(workflow: string): Promise<StepResult> {
-  const name = WORKFLOW_NAMES[workflow] ?? workflow;
-
+async function dispatchWorkflow(workflow: string): Promise<{ ok: boolean; error?: string }> {
   if (!GITHUB_TOKEN || !GITHUB_REPO) {
-    return { workflow, name, ok: false, error: "GITHUB_TOKEN or GITHUB_REPO not set" };
+    return { ok: false, error: "GITHUB_TOKEN or GITHUB_REPO not set" };
   }
-
   try {
     const res = await fetch(
       `https://api.github.com/repos/${GITHUB_REPO}/actions/workflows/${workflow}/dispatches`,
@@ -52,26 +35,45 @@ async function dispatch(workflow: string): Promise<StepResult> {
         body: JSON.stringify({ ref: GITHUB_BRANCH }),
       }
     );
-
-    // 204 = dispatch accepted
-    if (res.status === 204) return { workflow, name, ok: true };
-
+    if (res.status === 204) return { ok: true };
     const text = await res.text().catch(() => "");
-    return { workflow, name, ok: false, error: `HTTP ${res.status}${text ? `: ${text}` : ""}` };
+    return { ok: false, error: `HTTP ${res.status}${text ? `: ${text}` : ""}` };
   } catch (e) {
-    return { workflow, name, ok: false, error: String(e) };
+    return { ok: false, error: String(e) };
   }
 }
 
+// Streams NDJSON events as each group fires:
+//   { type:"dispatched", workflow, name, dispatchedAt, ok, error? }
+//   { type:"done" }
 export async function POST() {
-  const results: StepResult[] = [];
+  const encoder = new TextEncoder();
 
-  for (let i = 0; i < WORKFLOW_GROUPS.length; i++) {
-    if (i > 0) await new Promise((r) => setTimeout(r, 1500));
+  const stream = new ReadableStream({
+    async start(controller) {
+      const send = (data: object) =>
+        controller.enqueue(encoder.encode(JSON.stringify(data) + "\n"));
 
-    const groupResults = await Promise.all(WORKFLOW_GROUPS[i].map(dispatch));
-    results.push(...groupResults);
-  }
+      try {
+        for (let i = 0; i < WORKFLOW_GROUPS.length; i++) {
+          if (i > 0) await new Promise((r) => setTimeout(r, 1500));
 
-  return NextResponse.json({ ok: results.every((r) => r.ok), steps: results });
+          const now = new Date().toISOString();
+          await Promise.all(
+            WORKFLOW_GROUPS[i].map(async ({ workflow, name }) => {
+              const result = await dispatchWorkflow(workflow);
+              send({ type: "dispatched", workflow, name, dispatchedAt: now, ...result });
+            })
+          );
+        }
+      } finally {
+        send({ type: "done" });
+        controller.close();
+      }
+    },
+  });
+
+  return new Response(stream, {
+    headers: { "Content-Type": "application/x-ndjson" },
+  });
 }
