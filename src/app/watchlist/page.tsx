@@ -5,6 +5,7 @@ import { CollapsibleSection } from "@/components/CollapsibleSection";
 import { AddStockForms } from "@/components/AddStockForms";
 import { MarketTabs } from "@/components/MarketTabs";
 import { RebalanceView } from "@/components/RebalanceView";
+import { RebalanceToggle } from "@/components/RebalanceToggle";
 import { RefreshSignalsButton } from "@/components/RefreshSignalsButton";
 import type { WatchlistRow, PriceTick, AlertLogRow } from "@/lib/types";
 import type { Holding, SymbolSignals } from "@/components/StocksTable";
@@ -125,7 +126,7 @@ export default async function StocksPage() {
         </CollapsibleSection>
 
         {/* DAILY REBALANCE — collapsed by default; preview-then-execute flow */}
-        <CollapsibleSection title="Daily Rebalance" defaultOpen={false}>
+        <CollapsibleSection title="Daily Rebalance" defaultOpen={false} headerActions={<RebalanceToggle />}>
           <RebalanceView />
         </CollapsibleSection>
 

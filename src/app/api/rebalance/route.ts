@@ -222,8 +222,25 @@ interface CancelSummary {
 
 export async function POST(request: NextRequest) {
   try {
-    const body = (await request.json().catch(() => ({}))) as Record<string, string>;
-    const config = parseConfig(body);
+    const body = (await request.json().catch(() => ({}))) as Record<string, string | boolean>;
+    const config = parseConfig(body as Record<string, string>);
+
+    // Scheduled runs (triggered by daily-rebalance.yml) are gated by the
+    // rebalance_enabled setting. Manual runs from the UI always proceed.
+    if (body.scheduled === true) {
+      const db = createClient();
+      const { data: setting } = await db
+        .from("settings")
+        .select("value")
+        .eq("key", "rebalance_enabled")
+        .single();
+      if (setting?.value !== "true") {
+        return NextResponse.json({
+          skipped: true,
+          reason: "Auto-rebalancing is disabled. Enable it in the dashboard.",
+        });
+      }
+    }
 
     // Step 1: cancel any open orders so the position state used by the planner
     // matches reality (no half-filled or pending swaps from earlier runs).

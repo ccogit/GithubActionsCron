@@ -45,7 +45,7 @@ jobs:
           curl --fail-with-body --show-error --silent \
             -X POST "$REBALANCE_URL" \
             -H "Content-Type: application/json" \
-            -d '{}' \
+            -d '{"scheduled":true}' \
             -o response.json
           echo "--- Response ---"
           cat response.json
