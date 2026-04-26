@@ -51,6 +51,7 @@ type ShortRow    = { symbol: string; short_pct_float: number | null };
 type InsiderRow  = { symbol: string; signal: string | null };
 type EarningsRow = { symbol: string; beat_rate: number | null };
 type SocialRow   = { symbol: string; wsb_sentiment: string | null };
+type MacroRow    = { indicator: string; value: number | null };
 
 interface PlanBundle {
   plan: RebalancePlan;
@@ -65,7 +66,10 @@ interface PlanBundle {
 async function buildPlan(config: RebalanceConfig): Promise<PlanBundle> {
   const db = createClient();
 
-  const [positions, constituentsRes, analystRes, politicianRes, ratingsRes, techRes, shortRes, insiderRes, earningsRes, socialRes] =
+  // Fetch all signal data in parallel. If any upstream workflow fails (e.g., politician trades
+  // hits API rate limits), its table won't be updated but will retain cached data from the
+  // last successful run. Attractiveness calculation proceeds with whatever signals are available.
+  const [positions, constituentsRes, analystRes, politicianRes, ratingsRes, techRes, shortRes, insiderRes, earningsRes, socialRes, macroRes] =
     await Promise.all([
       getPositions(),
       db.from("index_constituents").select("symbol, name, exchange, exchange_type").eq("active", true),
@@ -77,6 +81,7 @@ async function buildPlan(config: RebalanceConfig): Promise<PlanBundle> {
       db.from("insider_signals").select("symbol, signal"),
       db.from("earnings_signals").select("symbol, beat_rate"),
       db.from("social_sentiment").select("symbol, wsb_sentiment"),
+      db.from("economic_indicators").select("indicator, value"),
     ]);
 
   // Universe restricted to US-tradable (Alpaca paper); group by exchange for quote fetch
@@ -103,6 +108,11 @@ async function buildPlan(config: RebalanceConfig): Promise<PlanBundle> {
   const socialMap     = new Map((socialRes.data ?? []).map((r: SocialRow) => [r.symbol, r.wsb_sentiment]));
   const quoteMap      = new Map(quotes.map((q) => [q.symbol, q]));
 
+  // Extract latest macro indicators (even if economic_indicators workflow failed, use cached values)
+  const macroIndicators = new Map((macroRes.data ?? []).map((r: MacroRow) => [r.indicator, r.value]));
+  const fedRate = macroIndicators.get("DFF") ?? null;
+  const unemployment = macroIndicators.get("UNRATE") ?? null;
+
   // Score every symbol we know about (held + universe)
   const allSymbols = new Set<string>();
   for (const p of positions) allSymbols.add(p.symbol);
@@ -126,6 +136,8 @@ async function buildPlan(config: RebalanceConfig): Promise<PlanBundle> {
       insider_signal: insiderMap.get(sym) ?? null,
       eps_beat_rate: earningsMap.get(sym) ?? null,
       wsb_sentiment: socialMap.get(sym) ?? null,
+      fed_rate: fedRate,
+      unemployment: unemployment,
     });
     scoreMap.set(sym, r.score);
   }
