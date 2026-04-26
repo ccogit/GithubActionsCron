@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getPositions } from "@/lib/alpaca";
 import { fetchQuotesForExchange, type QuoteRow } from "@/lib/market-quotes";
-import { computeAttractiveness } from "@/lib/attractiveness";
+import { computeAttractiveness, type AttractivenessResult } from "@/lib/attractiveness";
 import {
   planRebalance,
   type PortfolioPosition,
@@ -61,6 +61,7 @@ interface PlanBundle {
     universeSize: number;
     symbolsScored: number;
   };
+  scoreDetails: Record<string, AttractivenessResult>;
 }
 
 async function buildPlan(config: RebalanceConfig): Promise<PlanBundle> {
@@ -119,6 +120,7 @@ async function buildPlan(config: RebalanceConfig): Promise<PlanBundle> {
   for (const q of quotes) allSymbols.add(q.symbol);
 
   const scoreMap = new Map<string, number>();
+  const scoreDetailsMap = new Map<string, AttractivenessResult>();
   for (const sym of allSymbols) {
     const a = analystMap.get(sym);
     const p = politicianMap.get(sym);
@@ -140,6 +142,7 @@ async function buildPlan(config: RebalanceConfig): Promise<PlanBundle> {
       unemployment: unemployment,
     });
     scoreMap.set(sym, r.score);
+    scoreDetailsMap.set(sym, r);
   }
 
   // Held positions (US equities only — Alpaca paper limitation)
@@ -168,6 +171,12 @@ async function buildPlan(config: RebalanceConfig): Promise<PlanBundle> {
 
   const plan = planRebalance(portfolioPositions, positionScores, universe, config);
 
+  // Convert scoreDetailsMap to plain object for JSON serialization
+  const scoreDetails: Record<string, AttractivenessResult> = {};
+  for (const [sym, details] of scoreDetailsMap.entries()) {
+    scoreDetails[sym] = details;
+  }
+
   return {
     plan,
     config,
@@ -176,6 +185,7 @@ async function buildPlan(config: RebalanceConfig): Promise<PlanBundle> {
       universeSize: universe.length,
       symbolsScored: scoreMap.size,
     },
+    scoreDetails,
   };
 }
 

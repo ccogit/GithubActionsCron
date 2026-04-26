@@ -29,7 +29,22 @@
       "Bash(curl -s \"https://query1.finance.yahoo.com/v8/finance/chart/SAP.DE?interval=1d&range=2d\" -H \"User-Agent: Mozilla/5.0\")",
       "Bash(taskkill /F /IM node.exe)",
       "Bash(pkill -9 node)",
-      "Bash(tasklist)"
+      "Bash(tasklist)",
+      "Bash(npx eslint *)",
+      "Bash(node *)",
+      "WebFetch(domain:finnhubio.github.io)",
+      "WebFetch(domain:www.alphavantage.co)",
+      "WebFetch(domain:fred.stlouisfed.org)",
+      "WebFetch(domain:docs.data.nasdaq.com)",
+      "WebFetch(domain:sec-api.io)",
+      "WebFetch(domain:earningsfeed.com)",
+      "WebFetch(domain:hexdocs.pm)",
+      "WebFetch(domain:www.stockgeist.ai)",
+      "WebFetch(domain:docs.google.com)",
+      "Bash(Test-Path *)",
+      "Bash(python3 -m py_compile worker/refresh_technical_signals.py worker/refresh_economic_indicators.py)",
+      "Bash(python *)",
+      "Bash(python3 *)"
     ]
   }
 }
