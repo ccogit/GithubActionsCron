@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { fetchQuotesForExchange, type QuoteRow } from "@/lib/market-quotes";
+import { computeAttractiveness } from "@/lib/attractiveness";
 
 export const revalidate = 300;
 
@@ -54,67 +55,18 @@ type PoliticianRow = {
 type Constituent = { symbol: string; name: string; exchange: string; exchange_type: string };
 
 function computeScore(stock: DiscoveryStock): void {
-  let s = 0;
-  let count = 0;
-  const reasons: string[] = [];
-
-  if (stock.upside_pct != null) {
-    if (stock.upside_pct > 15) {
-      s += 2; count++;
-      reasons.push(`+${stock.upside_pct.toFixed(0)}% analyst upside`);
-    } else if (stock.upside_pct > 5) {
-      s += 1; count++;
-    } else if (stock.upside_pct < -10) {
-      s -= 2; count++;
-      reasons.push(`${stock.upside_pct.toFixed(0)}% analyst downside`);
-    } else if (stock.upside_pct < -3) {
-      s -= 1; count++;
-    }
-  }
-
-  const trades = stock.buy_count + stock.sell_count;
-  if (trades >= 3) {
-    const ratio = stock.buy_count / trades;
-    if (ratio > 0.7) {
-      s += 1; count++;
-      reasons.push(`${stock.buy_count} politicians buying`);
-    } else if (ratio < 0.3) {
-      s -= 1; count++;
-      reasons.push(`${stock.sell_count} politicians selling`);
-    }
-  }
-
-  if (stock.news_sentiment != null) {
-    if (stock.news_sentiment > 0.2) {
-      s += 1; count++;
-      reasons.push("positive news");
-    } else if (stock.news_sentiment < -0.2) {
-      s -= 1; count++;
-      reasons.push("negative news");
-    }
-  }
-
-  if (stock.trends_direction === "rising") {
-    s += 1; count++;
-    reasons.push("rising interest");
-  } else if (stock.trends_direction === "falling") {
-    s -= 1; count++;
-  }
-
-  if (stock.changePct != null) {
-    if (stock.changePct > 5) {
-      s += 1; count++;
-      reasons.push(`+${stock.changePct.toFixed(1)}% today`);
-    } else if (stock.changePct < -5) {
-      s -= 1; count++;
-      reasons.push(`${stock.changePct.toFixed(1)}% today`);
-    }
-  }
-
-  stock.score = s;
-  stock.signalCount = count;
-  stock.outlook = s >= 2 ? "bullish" : s <= -2 ? "bearish" : "mixed";
-  stock.reasons = reasons.slice(0, 3);
+  const r = computeAttractiveness({
+    upside_pct: stock.upside_pct,
+    buy_count: stock.buy_count,
+    sell_count: stock.sell_count,
+    news_sentiment: stock.news_sentiment,
+    trends_direction: stock.trends_direction,
+    changePct: stock.changePct,
+  });
+  stock.score = r.score;
+  stock.signalCount = r.signalCount;
+  stock.outlook = r.outlook;
+  stock.reasons = r.reasons;
 }
 
 export async function GET() {

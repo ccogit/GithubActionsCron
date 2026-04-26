@@ -4,6 +4,7 @@ import { RealtimeWatchlist } from "@/components/RealtimeWatchlist";
 import { CollapsibleSection } from "@/components/CollapsibleSection";
 import { AddStockForms } from "@/components/AddStockForms";
 import { MarketTabs } from "@/components/MarketTabs";
+import { RebalanceView } from "@/components/RebalanceView";
 import type { WatchlistRow, PriceTick, AlertLogRow } from "@/lib/types";
 import type { Holding, SymbolSignals } from "@/components/StocksTable";
 
@@ -118,6 +119,11 @@ export default async function StocksPage() {
             colors={CHART_COLORS}
             signals={signalsBySymbol}
           />
+        </CollapsibleSection>
+
+        {/* DAILY REBALANCE — collapsed by default; preview-then-execute flow */}
+        <CollapsibleSection title="Daily Rebalance" defaultOpen={false}>
+          <RebalanceView />
         </CollapsibleSection>
 
         {/* MARKET — flat tab nav: Spotlight | Analysts | Investors | Politicians | Alerts | Explore */}

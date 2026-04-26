@@ -5,11 +5,11 @@ and upserts them into the index_constituents table. Runs weekly.
 """
 
 import os
+import pandas as pd
+import requests
 import sys
 from datetime import datetime, timezone
 
-import pandas as pd
-import requests
 from supabase import create_client
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
