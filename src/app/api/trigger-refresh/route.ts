@@ -18,6 +18,7 @@ const WORKFLOW_GROUPS: Array<{ workflow: string; name: string }[]> = [
     { workflow: "refresh-short-interest.yml",     name: "Short Interest" },
     { workflow: "refresh-insider-signals.yml",    name: "Insider Signals" },
     { workflow: "refresh-earnings-signals.yml",   name: "Earnings Signals" },
+    { workflow: "refresh-social-sentiment.yml",   name: "Social Sentiment" },
   ],
   [{ workflow: "enrich-politician-signals.yml", name: "Enrich Signals" }],
 ];

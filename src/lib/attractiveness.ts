@@ -1,9 +1,9 @@
 // Composite "attractiveness" score for a stock, derived from multiple signals.
 // Each signal contributes ±1 (or ±2 for strong analyst conviction). Higher is better.
 //
-// Possible range with all 10 signals:
-//   max  +9  (upside+2, all others+1)
-//   min  −8  (downside−2, short interest−1, all others−1)
+// Possible range with all 11 signals:
+//   max  +10  (upside+2, all others+1)
+//   min  −9   (downside−2, short interest−1, all others−1)
 //
 // Outlook thresholds set to ±3 so a stock needs conviction across multiple
 // signals before being labelled bullish or bearish.
@@ -38,6 +38,9 @@ export interface AttractivenessSignals {
 
   // --- earnings beat rate over last 4 quarters (yfinance, weekly) ---
   eps_beat_rate?: number | null;     // 0.0–1.0
+
+  // --- social sentiment (Tradestie WSB + ApeWisdom Reddit, hourly) ---
+  wsb_sentiment?: string | null;     // 'Bullish' | 'Bearish'
 }
 
 export interface AttractivenessResult {
@@ -156,6 +159,15 @@ export function computeAttractiveness(s: AttractivenessSignals): AttractivenessR
       score -= 1; count++;
       reasons.push("earnings misses");
     }
+  }
+
+  // 11. Social sentiment (WSB + Reddit)
+  if (s.wsb_sentiment === "Bullish") {
+    score += 1; count++;
+    reasons.push("WSB bullish");
+  } else if (s.wsb_sentiment === "Bearish") {
+    score -= 1; count++;
+    reasons.push("WSB bearish");
   }
 
   return {

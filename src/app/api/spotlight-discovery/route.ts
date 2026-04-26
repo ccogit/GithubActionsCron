@@ -36,6 +36,7 @@ interface DiscoveryStock {
   short_pct_float: number | null;
   insider_signal: string | null;
   eps_beat_rate: number | null;
+  wsb_sentiment: string | null;
 
   score: number;
   signalCount: number;
@@ -51,6 +52,7 @@ type TechRow = { symbol: string; signal: string | null };
 type ShortRow = { symbol: string; short_pct_float: number | null };
 type InsiderRow = { symbol: string; signal: string | null };
 type EarningsRow = { symbol: string; beat_rate: number | null };
+type SocialRow = { symbol: string; wsb_sentiment: string | null };
 
 function computeScore(stock: DiscoveryStock): void {
   const r = computeAttractiveness({
@@ -65,6 +67,7 @@ function computeScore(stock: DiscoveryStock): void {
     short_pct_float: stock.short_pct_float,
     insider_signal: stock.insider_signal,
     eps_beat_rate: stock.eps_beat_rate,
+    wsb_sentiment: stock.wsb_sentiment,
   });
   stock.score = r.score;
   stock.signalCount = r.signalCount;
@@ -76,7 +79,7 @@ export async function GET() {
   try {
     const db = createClient();
 
-    const [constituentsRes, analystRes, politicianRes, ratingsRes, techRes, shortRes, insiderRes, earningsRes] =
+    const [constituentsRes, analystRes, politicianRes, ratingsRes, techRes, shortRes, insiderRes, earningsRes, socialRes] =
       await Promise.all([
         db.from("index_constituents").select("symbol, name, exchange, exchange_type").eq("active", true),
         db.from("analyst_cache").select("symbol, target_mean, current_price, upside_pct, n_analysts").not("upside_pct", "is", null),
@@ -86,6 +89,7 @@ export async function GET() {
         db.from("short_interest_cache").select("symbol, short_pct_float"),
         db.from("insider_signals").select("symbol, signal"),
         db.from("earnings_signals").select("symbol, beat_rate"),
+        db.from("social_sentiment").select("symbol, wsb_sentiment"),
       ]);
 
     const allConstituents = (constituentsRes.data ?? []) as Constituent[];
@@ -113,6 +117,7 @@ export async function GET() {
     const shortMap = new Map((shortRes.data ?? []).map((r: ShortRow) => [r.symbol, r.short_pct_float]));
     const insiderMap = new Map((insiderRes.data ?? []).map((r: InsiderRow) => [r.symbol, r.signal]));
     const earningsMap = new Map((earningsRes.data ?? []).map((r: EarningsRow) => [r.symbol, r.beat_rate]));
+    const socialMap = new Map((socialRes.data ?? []).map((r: SocialRow) => [r.symbol, r.wsb_sentiment]));
 
     const stockMap = new Map<string, DiscoveryStock>();
 
@@ -138,6 +143,7 @@ export async function GET() {
           short_pct_float: shortMap.get(symbol) ?? null,
           insider_signal: insiderMap.get(symbol) ?? null,
           eps_beat_rate: earningsMap.get(symbol) ?? null,
+          wsb_sentiment: socialMap.get(symbol) ?? null,
           score: 0,
           signalCount: 0,
           outlook: "mixed",

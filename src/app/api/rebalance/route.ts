@@ -50,6 +50,7 @@ type TechRow     = { symbol: string; signal: string | null };
 type ShortRow    = { symbol: string; short_pct_float: number | null };
 type InsiderRow  = { symbol: string; signal: string | null };
 type EarningsRow = { symbol: string; beat_rate: number | null };
+type SocialRow   = { symbol: string; wsb_sentiment: string | null };
 
 interface PlanBundle {
   plan: RebalancePlan;
@@ -64,7 +65,7 @@ interface PlanBundle {
 async function buildPlan(config: RebalanceConfig): Promise<PlanBundle> {
   const db = createClient();
 
-  const [positions, constituentsRes, analystRes, politicianRes, ratingsRes, techRes, shortRes, insiderRes, earningsRes] =
+  const [positions, constituentsRes, analystRes, politicianRes, ratingsRes, techRes, shortRes, insiderRes, earningsRes, socialRes] =
     await Promise.all([
       getPositions(),
       db.from("index_constituents").select("symbol, name, exchange, exchange_type").eq("active", true),
@@ -75,6 +76,7 @@ async function buildPlan(config: RebalanceConfig): Promise<PlanBundle> {
       db.from("short_interest_cache").select("symbol, short_pct_float"),
       db.from("insider_signals").select("symbol, signal"),
       db.from("earnings_signals").select("symbol, beat_rate"),
+      db.from("social_sentiment").select("symbol, wsb_sentiment"),
     ]);
 
   // Universe restricted to US-tradable (Alpaca paper); group by exchange for quote fetch
@@ -98,6 +100,7 @@ async function buildPlan(config: RebalanceConfig): Promise<PlanBundle> {
   const shortMap      = new Map((shortRes.data ?? []).map((r: ShortRow) => [r.symbol, r.short_pct_float]));
   const insiderMap    = new Map((insiderRes.data ?? []).map((r: InsiderRow) => [r.symbol, r.signal]));
   const earningsMap   = new Map((earningsRes.data ?? []).map((r: EarningsRow) => [r.symbol, r.beat_rate]));
+  const socialMap     = new Map((socialRes.data ?? []).map((r: SocialRow) => [r.symbol, r.wsb_sentiment]));
   const quoteMap      = new Map(quotes.map((q) => [q.symbol, q]));
 
   // Score every symbol we know about (held + universe)
@@ -122,6 +125,7 @@ async function buildPlan(config: RebalanceConfig): Promise<PlanBundle> {
       short_pct_float: shortMap.get(sym) ?? null,
       insider_signal: insiderMap.get(sym) ?? null,
       eps_beat_rate: earningsMap.get(sym) ?? null,
+      wsb_sentiment: socialMap.get(sym) ?? null,
     });
     scoreMap.set(sym, r.score);
   }
