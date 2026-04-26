@@ -10,11 +10,22 @@ import time
 from datetime import datetime, timezone
 from collections import defaultdict
 from typing import Optional
+from pathlib import Path
 
 import requests
 from supabase import create_client
 
-SUPABASE_URL = os.environ["SUPABASE_URL"]
+# Load .env.local if it exists and env vars aren't set
+env_file = Path(__file__).parent.parent / ".env.local"
+if env_file.exists() and "SUPABASE_URL" not in os.environ:
+    for line in env_file.read_text().splitlines():
+        if line and not line.startswith("#"):
+            key, _, value = line.partition("=")
+            if key.startswith("NEXT_PUBLIC_"):
+                key = key.replace("NEXT_PUBLIC_", "")
+            os.environ.setdefault(key.strip(), value.strip())
+
+SUPABASE_URL = os.environ.get("SUPABASE_URL") or os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_ROLE = os.environ["SUPABASE_SERVICE_ROLE"]
 AINVEST_TOKEN = os.environ.get("AINVEST_API_KEY", "")
 
@@ -57,10 +68,13 @@ def fetch_trades(symbol: str) -> list:
         r = requests.get(url, headers=headers, timeout=10)
 
         if r.status_code != 200:
+            print(f"  {symbol}: HTTP {r.status_code}", file=sys.stderr)
             return []
 
         data = r.json()
         if data.get("status_code") != 0:
+            status_msg = data.get('status_msg') or data.get('message', 'unknown')
+            print(f"  {symbol}: API error {data.get('status_code')} - {status_msg}", file=sys.stderr)
             return []
 
         trades = data.get("data", {}).get("data", [])
@@ -76,7 +90,7 @@ def fetch_trades(symbol: str) -> list:
         ]
 
     except Exception as e:
-        print(f"  Error fetching {symbol}: {e}", file=sys.stderr)
+        print(f"  {symbol}: {type(e).__name__}: {e}", file=sys.stderr)
         return []
 
 
