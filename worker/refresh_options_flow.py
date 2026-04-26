@@ -7,6 +7,7 @@ open interest — the standard definition of "unusual" options activity.
 Stores aggregated unusual volume and call/put ratio per symbol.
 """
 
+import math
 import os
 import sys
 import time
@@ -14,6 +15,25 @@ import pandas as pd
 import yfinance as yf
 from datetime import datetime, timezone
 from typing import Optional
+
+
+def _to_int(x) -> int:
+    """Convert a scalar to int, returning 0 for NaN/inf/non-numeric."""
+    try:
+        f = float(x)
+        return int(f) if math.isfinite(f) else 0
+    except Exception:
+        return 0
+
+
+def _clean(series: pd.Series) -> pd.Series:
+    """Coerce to numeric, replace NaN and ±inf with 0, clip negatives."""
+    return (
+        pd.to_numeric(series, errors="coerce")
+        .fillna(0)
+        .replace([float("inf"), float("-inf")], 0)
+        .clip(lower=0)
+    )
 
 from supabase import create_client
 
@@ -60,7 +80,10 @@ def get_options_flow(symbol: str) -> Optional[dict]:
     """
     try:
         ticker = yf.Ticker(symbol)
-        expirations = ticker.options
+        try:
+            expirations = ticker.options
+        except Exception:
+            return None
         if not expirations:
             return None
 
@@ -76,18 +99,18 @@ def get_options_flow(symbol: str) -> Optional[dict]:
             except Exception:
                 continue
 
-            for opt_type, df in [("call", chain.calls), ("put", chain.puts)]:
+            for opt_type, attr in [("call", "calls"), ("put", "puts")]:
                 try:
-                    # Coerce to numeric first — handles NaN, pd.NA, None, inf
-                    vol = pd.to_numeric(df["volume"], errors="coerce").fillna(0)
-                    oi  = pd.to_numeric(df["openInterest"], errors="coerce").fillna(0)
+                    df = getattr(chain, attr)
+                    vol = _clean(df["volume"])
+                    oi  = _clean(df["openInterest"])
 
                     valid = (oi > 0) & (vol > 0)
-                    total_contracts_checked += int(valid.sum())
+                    total_contracts_checked += _to_int(valid.sum())
 
                     unusual_mask = valid & (vol >= oi * VOLUME_OI_RATIO_THRESHOLD)
-                    count = int(unusual_mask.sum())
-                    total_unusual_volume += int(vol[unusual_mask].sum())
+                    count = _to_int(unusual_mask.sum())
+                    total_unusual_volume += _to_int(vol[unusual_mask].sum())
 
                     if opt_type == "call":
                         unusual_calls += count
