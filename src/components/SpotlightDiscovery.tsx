@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, type ReactNode } from 'react';
+import { useState, useEffect, useCallback, type ReactNode } from 'react';
 import {
   Sparkles,
   TrendingUp,
@@ -71,19 +71,34 @@ function MiniPill({
 
 export function SpotlightDiscovery() {
   const [stocks, setStocks] = useState<DiscoveryStock[] | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [buyingSymbol, setBuyingSymbol] = useState<string | null>(null);
   const [buyQty, setBuyQty] = useState('1');
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    fetch('/api/spotlight-discovery')
-      .then((r) => r.json())
-      .then((d) => setStocks(d.stocks ?? []))
-      .catch((e) => {
-        console.error('Failed to fetch discovery:', e);
-        setStocks([]);
-      });
+  const fetchStocks = useCallback(async (showRefreshing = false) => {
+    if (showRefreshing) setRefreshing(true);
+    try {
+      const r = await fetch('/api/spotlight-discovery');
+      const d = await r.json();
+      setStocks(d.stocks ?? []);
+    } catch (e) {
+      console.error('Failed to fetch discovery:', e);
+      if (!showRefreshing) setStocks([]);
+    } finally {
+      if (showRefreshing) setRefreshing(false);
+    }
   }, []);
+
+  // Initial load
+  useEffect(() => { fetchStocks(); }, [fetchStocks]);
+
+  // Re-fetch when workflows complete
+  useEffect(() => {
+    const handler = () => fetchStocks(true);
+    window.addEventListener('signals-refreshed', handler);
+    return () => window.removeEventListener('signals-refreshed', handler);
+  }, [fetchStocks]);
 
   async function confirmBuy(symbol: string) {
     const qty = parseInt(buyQty, 10);
@@ -127,7 +142,7 @@ export function SpotlightDiscovery() {
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+    <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 transition-opacity duration-300 ${refreshing ? 'opacity-50 pointer-events-none' : ''}`}>
       {stocks.map((stock) => {
         const isBull = stock.outlook === 'bullish';
         const accentColor = isBull ? 'text-green-400' : 'text-red-400';

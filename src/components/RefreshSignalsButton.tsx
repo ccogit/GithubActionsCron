@@ -12,6 +12,8 @@ interface WorkflowEntry {
   runState: RunState;
   dispatchError?: string;
   conclusion?: string;
+  stepsDone?: number;
+  stepsTotal?: number;
 }
 
 const TERMINAL: ReadonlySet<RunState> = new Set(['completed', 'failed']);
@@ -29,7 +31,6 @@ export function RefreshSignalsButton() {
   const [workflows, setWorkflows] = useState<Map<string, WorkflowEntry>>(new Map());
   const [expanded, setExpanded] = useState(false);
 
-  // Always-current reference so polling closure never goes stale
   const latestWorkflows = useRef(workflows);
   latestWorkflows.current = workflows;
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -43,7 +44,18 @@ export function RefreshSignalsButton() {
     });
   }, []);
 
-  // Start polling once all dispatches have been sent
+  // Fire custom event when all workflows reach terminal state with ≥1 success
+  const latestState = overallState(workflows);
+  const prevState = useRef<string>('idle');
+  useEffect(() => {
+    if (latestState !== 'idle' && latestState !== 'amber' && prevState.current === 'amber') {
+      if (latestState === 'green') {
+        window.dispatchEvent(new CustomEvent('signals-refreshed'));
+      }
+    }
+    prevState.current = latestState;
+  }, [latestState]);
+
   useEffect(() => {
     if (!streamDone) return;
 
@@ -64,26 +76,27 @@ export function RefreshSignalsButton() {
               `/api/workflow-status?workflow=${encodeURIComponent(wf.workflow)}&since=${encodeURIComponent(wf.dispatchedAt)}`
             );
             const data = await res.json();
-            if (data.state && data.state !== wf.runState) {
-              patchWorkflow(key, { runState: data.state as RunState, conclusion: data.conclusion });
+            if (data.state) {
+              patchWorkflow(key, {
+                runState: data.state as RunState,
+                conclusion: data.conclusion,
+                stepsDone: data.stepsDone,
+                stepsTotal: data.stepsTotal,
+              });
             }
           } catch {
-            // network hiccup — try again next interval
+            // network hiccup — try again next tick
           }
         })
       );
     };
 
-    poll(); // immediate first check
+    poll();
     pollingRef.current = setInterval(poll, 5000);
-
-    return () => {
-      if (pollingRef.current) clearInterval(pollingRef.current);
-    };
+    return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
   }, [streamDone, patchWorkflow]);
 
   async function trigger() {
-    // Clear previous run and stop any in-progress polling
     setStreaming(true);
     setStreamDone(false);
     setWorkflows(new Map());
@@ -119,14 +132,13 @@ export function RefreshSignalsButton() {
               setWorkflows((prev) => new Map(prev).set(ev.workflow, entry));
             }
           } catch {
-            // malformed JSON line — skip
+            // malformed JSON line
           }
         }
       }
     } catch (e) {
-      // surface catastrophic network failure as a pseudo-entry
       setWorkflows((prev) => {
-        if (prev.size > 0) return prev; // partial progress already shown
+        if (prev.size > 0) return prev;
         return new Map([
           ['__error__', {
             workflow: '__error__',
@@ -146,10 +158,29 @@ export function RefreshSignalsButton() {
   const state = streaming ? 'amber' : overallState(workflows);
   const hasWorkflows = workflows.size > 0;
 
+  const all = Array.from(workflows.values());
+  const terminalCount = all.filter((w) => TERMINAL.has(w.runState)).length;
+  const totalCount = all.length;
+
+  // Overall label
+  let mainLabel: string;
+  if (state === 'amber') {
+    mainLabel = streaming
+      ? 'Triggering…'
+      : totalCount > 0
+      ? `Running… ${terminalCount}/${totalCount}`
+      : 'Running…';
+  } else if (state === 'green') {
+    mainLabel = 'All done';
+  } else if (state === 'red') {
+    mainLabel = 'Some failed';
+  } else {
+    mainLabel = 'Refresh all signals';
+  }
+
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
-        {/* Main trigger button */}
         <button
           type="button"
           onClick={trigger}
@@ -173,18 +204,10 @@ export function RefreshSignalsButton() {
           ) : (
             <RefreshCw className="w-3 h-3" />
           )}
-          {state === 'amber'
-            ? streaming ? 'Triggering…' : 'Running…'
-            : state === 'green'
-            ? 'All done'
-            : state === 'red'
-            ? 'Some failed'
-            : 'Refresh all signals'}
+          {mainLabel}
         </button>
-
       </div>
 
-      {/* Per-workflow detail panel */}
       {hasWorkflows && (
         <div className="rounded-lg border border-white/10 overflow-hidden w-fit min-w-64">
           <button
@@ -192,7 +215,7 @@ export function RefreshSignalsButton() {
             onClick={() => setExpanded((v) => !v)}
             className="w-full flex items-center justify-between px-3 py-1.5 text-[10px] font-medium text-muted-foreground/50 hover:text-muted-foreground/80 hover:bg-white/5 transition-colors"
           >
-            <span>{workflows.size} workflows</span>
+            <span>{totalCount} workflows</span>
             {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
           </button>
           {expanded && (
@@ -213,7 +236,7 @@ export function RefreshSignalsButton() {
 }
 
 function WorkflowRow({ entry, borderBottom }: { entry: WorkflowEntry; borderBottom: boolean }) {
-  const { name, runState, dispatchError } = entry;
+  const { name, runState, dispatchError, stepsDone, stepsTotal } = entry;
   const isActive = runState === 'queued' || runState === 'running';
 
   const dotClass =
@@ -230,12 +253,16 @@ function WorkflowRow({ entry, borderBottom }: { entry: WorkflowEntry; borderBott
       ? 'text-red-400/70'
       : 'text-amber-400/70';
 
+  // Prefer real step-based percentage; fall back to indeterminate bar
+  const hasPct = isActive && stepsTotal != null && stepsTotal > 0;
+  const pct = hasPct ? Math.round(((stepsDone ?? 0) / stepsTotal!) * 100) : null;
+
   const label = dispatchError
     ? 'dispatch failed'
     : runState === 'queued'
     ? 'queued'
     : runState === 'running'
-    ? 'running'
+    ? pct != null ? `${pct}%` : 'running'
     : runState === 'completed'
     ? 'done'
     : 'failed';
@@ -249,10 +276,19 @@ function WorkflowRow({ entry, borderBottom }: { entry: WorkflowEntry; borderBott
       </div>
       {isActive && (
         <div className="mt-1 ml-3.5 h-px rounded-full bg-white/10 overflow-hidden">
-          <div
-            className="h-full w-2/5 rounded-full bg-amber-400/50"
-            style={{ animation: 'indeterminate 1.5s ease-in-out infinite' }}
-          />
+          {pct != null ? (
+            // Determinate bar when we have real step data
+            <div
+              className="h-full rounded-full bg-amber-400/60 transition-all duration-500"
+              style={{ width: `${pct}%` }}
+            />
+          ) : (
+            // Indeterminate sweep while queued or before steps load
+            <div
+              className="h-full w-2/5 rounded-full bg-amber-400/50"
+              style={{ animation: 'indeterminate 1.5s ease-in-out infinite' }}
+            />
+          )}
         </div>
       )}
     </div>

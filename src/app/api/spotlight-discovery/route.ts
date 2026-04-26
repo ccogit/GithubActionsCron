@@ -173,13 +173,13 @@ export async function GET() {
     for (const stock of stockMap.values()) computeScore(stock);
 
     const top = Array.from(stockMap.values())
-      .filter((s) => s.signalCount >= 2 && s.outlook !== "mixed")
+      .filter((s) => s.signalCount >= 2 && Math.abs(s.score) >= 2)
       .sort((a, b) => {
         const aPower = Math.abs(a.score) * 10 + a.signalCount;
         const bPower = Math.abs(b.score) * 10 + b.signalCount;
         return bPower - aPower;
       })
-      .slice(0, 9);
+      .slice(0, 20);
 
     return Response.json({ stocks: top });
   } catch (error) {
