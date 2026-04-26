@@ -87,7 +87,6 @@ export function RefreshSignalsButton() {
     setStreaming(true);
     setStreamDone(false);
     setWorkflows(new Map());
-    setExpanded(true);
 
     try {
       const res = await fetch('/api/trigger-refresh', { method: 'POST' });
@@ -183,29 +182,30 @@ export function RefreshSignalsButton() {
             : 'Refresh all signals'}
         </button>
 
-        {/* Expand/collapse toggle — only when there's something to show */}
-        {hasWorkflows && (
-          <button
-            type="button"
-            onClick={() => setExpanded((v) => !v)}
-            className="h-7 px-2 rounded-md flex items-center gap-1 text-[11px] text-muted-foreground/60 hover:text-muted-foreground bg-white/5 hover:bg-white/10 border border-white/10 transition-colors"
-          >
-            {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
-            details
-          </button>
-        )}
       </div>
 
       {/* Per-workflow detail panel */}
-      {hasWorkflows && expanded && (
+      {hasWorkflows && (
         <div className="rounded-lg border border-white/10 overflow-hidden w-fit min-w-64">
-          {Array.from(workflows.values()).map((wf, i, arr) => (
-            <WorkflowRow
-              key={wf.workflow}
-              entry={wf}
-              borderBottom={i < arr.length - 1}
-            />
-          ))}
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="w-full flex items-center justify-between px-3 py-1.5 text-[10px] font-medium text-muted-foreground/50 hover:text-muted-foreground/80 hover:bg-white/5 transition-colors"
+          >
+            <span>{workflows.size} workflows</span>
+            {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+          </button>
+          {expanded && (
+            <div className="border-t border-white/10">
+              {Array.from(workflows.values()).map((wf, i, arr) => (
+                <WorkflowRow
+                  key={wf.workflow}
+                  entry={wf}
+                  borderBottom={i < arr.length - 1}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -241,23 +241,20 @@ function WorkflowRow({ entry, borderBottom }: { entry: WorkflowEntry; borderBott
     : 'failed';
 
   return (
-    <div className={`px-3 py-2.5 bg-white/[0.02] ${borderBottom ? 'border-b border-white/5' : ''}`}>
-      <div className="flex items-center gap-2.5">
+    <div className={`px-3 py-1.5 bg-white/[0.02] ${borderBottom ? 'border-b border-white/5' : ''}`}>
+      <div className="flex items-center gap-2">
         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotClass}`} />
-        <span className="text-xs font-medium flex-1 pr-4">{name}</span>
+        <span className="text-[11px] flex-1 pr-3">{name}</span>
         <span className={`text-[10px] font-mono tabular-nums ${labelClass}`}>{label}</span>
       </div>
-
-      {/* Indeterminate progress bar — visible while queued or running */}
-      <div
-        className="mt-1.5 ml-4 h-0.5 rounded-full bg-white/10 overflow-hidden"
-        style={{ visibility: isActive ? 'visible' : 'hidden' }}
-      >
-        <div
-          className="h-full w-2/5 rounded-full bg-amber-400/50"
-          style={{ animation: 'indeterminate 1.5s ease-in-out infinite' }}
-        />
-      </div>
+      {isActive && (
+        <div className="mt-1 ml-3.5 h-px rounded-full bg-white/10 overflow-hidden">
+          <div
+            className="h-full w-2/5 rounded-full bg-amber-400/50"
+            style={{ animation: 'indeterminate 1.5s ease-in-out infinite' }}
+          />
+        </div>
+      )}
     </div>
   );
 }
