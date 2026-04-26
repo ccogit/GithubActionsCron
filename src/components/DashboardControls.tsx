@@ -54,7 +54,9 @@ export function DashboardControls() {
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
-          <RebalanceView />
+          <div className="px-4 py-4">
+            <RebalanceView />
+          </div>
         </div>
       )}
     </div>
