@@ -196,21 +196,31 @@ interface ExecutedOrder {
   error?: string;
 }
 
+interface CancelSummary {
+  attempted: number;
+  succeeded: number;
+  failed: number;
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json().catch(() => ({}))) as Record<string, string>;
     const config = parseConfig(body);
 
-    // Recompute the plan server-side — never trust a client-supplied trade list
+    // Step 1: cancel any open orders so the position state used by the planner
+    // matches reality (no half-filled or pending swaps from earlier runs).
+    const canceled = await cancelAllOpenOrders();
+
+    // Step 2: recompute the plan server-side — never trust a client-supplied list
     const { plan, summary } = await buildPlan(config);
 
     if (plan.swaps.length === 0) {
-      return NextResponse.json({ executed: [], plan, summary });
+      return NextResponse.json({ canceled, executed: [], plan, summary });
     }
 
     const executed: ExecutedOrder[] = [];
 
-    // Place sells first; Alpaca paper auto-handles unsettled cash for the buys
+    // Sells first; Alpaca paper auto-handles unsettled cash for the buys.
     for (const swap of plan.swaps) {
       executed.push(await placeOrder(swap.sell.symbol, swap.sell.qty, "sell"));
     }
@@ -222,10 +232,35 @@ export async function POST(request: NextRequest) {
       executed.push(await placeOrder(swap.buy.symbol, swap.buy.qty, "buy"));
     }
 
-    return NextResponse.json({ executed, plan, summary });
+    return NextResponse.json({ canceled, executed, plan, summary });
   } catch (error) {
     console.error("Error executing rebalance:", error);
     return NextResponse.json({ error: String(error) }, { status: 500 });
+  }
+}
+
+async function cancelAllOpenOrders(): Promise<CancelSummary> {
+  try {
+    const res = await fetch(`${ALPACA_ENDPOINT}/orders`, {
+      method: "DELETE",
+      headers: alpacaHeaders(),
+    });
+    if (!res.ok) {
+      return { attempted: 0, succeeded: 0, failed: 0 };
+    }
+    const data = await res.json();
+    if (!Array.isArray(data)) return { attempted: 0, succeeded: 0, failed: 0 };
+
+    let succeeded = 0;
+    let failed = 0;
+    for (const item of data) {
+      const status = typeof item?.status === "number" ? item.status : 500;
+      if (status >= 200 && status < 300) succeeded++;
+      else failed++;
+    }
+    return { attempted: data.length, succeeded, failed };
+  } catch {
+    return { attempted: 0, succeeded: 0, failed: 0 };
   }
 }
 

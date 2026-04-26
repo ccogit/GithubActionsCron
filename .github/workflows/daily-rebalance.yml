@@ -1,0 +1,51 @@
+name: Daily Rebalance
+
+# Fires Mon-Fri at 14:00 Europe/Berlin. GitHub cron is UTC and ignores DST,
+# so we register both possibilities (12:00 UTC during CEST, 13:00 UTC during
+# CET) and the first step bails out unless the local Berlin hour is 14.
+#
+# Required GitHub Actions secrets:
+#   REBALANCE_API_URL  Public URL of the deployed Next.js app's rebalance
+#                      endpoint, e.g. https://your-app.vercel.app/api/rebalance
+#
+# Manual trigger: GitHub Actions UI → "Run workflow", or click
+# "Run rebalance now" in the app.
+
+on:
+  schedule:
+    - cron: '0 12 * * 1-5'  # 14:00 CEST (March-October)
+    - cron: '0 13 * * 1-5'  # 14:00 CET  (October-March)
+  workflow_dispatch:
+
+jobs:
+  rebalance:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Resolve Berlin hour
+        id: berlin
+        run: echo "hour=$(TZ='Europe/Berlin' date +%H)" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if not 14:00 Berlin (only relevant for scheduled runs)
+        if: github.event_name == 'schedule' && steps.berlin.outputs.hour != '14'
+        run: |
+          echo "Berlin hour is ${{ steps.berlin.outputs.hour }} — not 14, skipping."
+          echo "BERLIN_SKIP=1" >> "$GITHUB_ENV"
+
+      - name: Trigger rebalance
+        if: env.BERLIN_SKIP != '1'
+        env:
+          REBALANCE_URL: ${{ secrets.REBALANCE_API_URL }}
+        run: |
+          if [ -z "$REBALANCE_URL" ]; then
+            echo "::error::REBALANCE_API_URL secret is not set"
+            exit 1
+          fi
+          echo "POST $REBALANCE_URL"
+          curl --fail-with-body --show-error --silent \
+            -X POST "$REBALANCE_URL" \
+            -H "Content-Type: application/json" \
+            -d '{}' \
+            -o response.json
+          echo "--- Response ---"
+          cat response.json

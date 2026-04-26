@@ -9,6 +9,7 @@ import {
   Play,
   Eye,
   Info,
+  XCircle,
 } from 'lucide-react';
 
 interface PlannedSwap {
@@ -48,6 +49,17 @@ interface ExecutedOrder {
   error?: string;
 }
 
+interface CancelSummary {
+  attempted: number;
+  succeeded: number;
+  failed: number;
+}
+
+interface ExecuteResult {
+  canceled: CancelSummary;
+  executed: ExecutedOrder[];
+}
+
 const DEFAULTS = {
   threshold: 1,
   minBuyScore: 1,
@@ -60,15 +72,13 @@ export function RebalanceView() {
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [executing, setExecuting] = useState(false);
-  const [confirming, setConfirming] = useState(false);
-  const [executed, setExecuted] = useState<ExecutedOrder[] | null>(null);
+  const [result, setResult] = useState<ExecuteResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   async function loadPreview() {
     setPreviewing(true);
     setError(null);
-    setExecuted(null);
-    setConfirming(false);
+    setResult(null);
     try {
       const params = new URLSearchParams({
         threshold: String(config.threshold),
@@ -104,14 +114,16 @@ export function RebalanceView() {
       if (data.error) {
         setError(data.error);
       } else {
-        setExecuted(data.executed ?? []);
+        setResult({
+          canceled: data.canceled ?? { attempted: 0, succeeded: 0, failed: 0 },
+          executed: data.executed ?? [],
+        });
         setPreview(null);
       }
     } catch (e) {
       setError(String(e));
     } finally {
       setExecuting(false);
-      setConfirming(false);
     }
   }
 
@@ -159,7 +171,7 @@ export function RebalanceView() {
         />
       </div>
 
-      {/* Actions */}
+      {/* Actions — preview is informational; Run rebalance acts immediately. */}
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -175,42 +187,19 @@ export function RebalanceView() {
           {preview ? 'Refresh preview' : 'Preview rebalance'}
         </button>
 
-        {preview && preview.plan.swaps.length > 0 && (
-          confirming ? (
-            <>
-              <button
-                type="button"
-                onClick={execute}
-                disabled={executing}
-                className="h-8 px-3 rounded-md flex items-center gap-1.5 text-xs font-medium text-amber-300 bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/30 transition-colors disabled:opacity-50"
-              >
-                {executing ? (
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                ) : (
-                  <Check className="w-3.5 h-3.5" />
-                )}
-                Confirm: place {preview.plan.swaps.length * 2} orders
-              </button>
-              <button
-                type="button"
-                onClick={() => setConfirming(false)}
-                disabled={executing}
-                className="h-8 px-3 rounded-md flex items-center text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-white/8 transition-colors disabled:opacity-50"
-              >
-                Cancel
-              </button>
-            </>
+        <button
+          type="button"
+          onClick={execute}
+          disabled={executing || previewing}
+          className="h-8 px-3 rounded-md flex items-center gap-1.5 text-xs font-medium text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 transition-colors disabled:opacity-50"
+        >
+          {executing ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
           ) : (
-            <button
-              type="button"
-              onClick={() => setConfirming(true)}
-              className="h-8 px-3 rounded-md flex items-center gap-1.5 text-xs font-medium text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 transition-colors"
-            >
-              <Play className="w-3.5 h-3.5" />
-              Execute
-            </button>
-          )
-        )}
+            <Play className="w-3.5 h-3.5" />
+          )}
+          Run rebalance now
+        </button>
       </div>
 
       {/* Error */}
@@ -222,12 +211,10 @@ export function RebalanceView() {
       )}
 
       {/* Execution result */}
-      {executed && (
-        <ExecutionResult orders={executed} />
-      )}
+      {result && <ExecutionResult result={result} />}
 
       {/* Preview */}
-      {preview && !executed && <PreviewBlock data={preview} />}
+      {preview && !result && <PreviewBlock data={preview} />}
     </div>
   );
 }
@@ -353,32 +340,53 @@ function SwapRow({ swap, index }: { swap: PlannedSwap; index: number }) {
   );
 }
 
-function ExecutionResult({ orders }: { orders: ExecutedOrder[] }) {
-  const failed = orders.filter((o) => !o.ok);
-  const ok = orders.length - failed.length;
+function ExecutionResult({ result }: { result: ExecuteResult }) {
+  const { canceled, executed } = result;
+  const failed = executed.filter((o) => !o.ok);
+  const ok = executed.length - failed.length;
 
   return (
     <div className="border border-white/10 rounded-lg p-3 space-y-2">
-      <div className="flex items-center gap-2 text-sm">
-        <Check className="w-4 h-4 text-green-400" />
-        <span className="font-medium">
-          Placed {ok} / {orders.length} orders
-        </span>
-      </div>
+      {canceled.attempted > 0 && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <XCircle className="w-3.5 h-3.5 text-amber-400/80" />
+          <span>
+            Canceled {canceled.succeeded} / {canceled.attempted} pending order
+            {canceled.attempted === 1 ? '' : 's'} before computing the plan
+            {canceled.failed > 0 ? ` (${canceled.failed} failed to cancel)` : ''}
+          </span>
+        </div>
+      )}
 
-      <div className="text-[11px] font-mono space-y-0.5 text-muted-foreground">
-        {orders.map((o, i) => (
-          <div key={i} className="flex items-center gap-2">
-            <span className={o.ok ? 'text-green-400/80' : 'text-red-400'}>
-              {o.ok ? '✓' : '✗'}
+      {executed.length === 0 ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Check className="w-4 h-4 text-green-400" />
+          <span>No swaps justified the threshold — nothing to do.</span>
+        </div>
+      ) : (
+        <>
+          <div className="flex items-center gap-2 text-sm">
+            <Check className="w-4 h-4 text-green-400" />
+            <span className="font-medium">
+              Placed {ok} / {executed.length} orders
             </span>
-            <span className="uppercase">{o.side}</span>
-            <span className="text-foreground">{o.symbol}</span>
-            <span>×{o.qty}</span>
-            {o.error && <span className="text-red-400/80 truncate">{o.error}</span>}
           </div>
-        ))}
-      </div>
+
+          <div className="text-[11px] font-mono space-y-0.5 text-muted-foreground">
+            {executed.map((o, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <span className={o.ok ? 'text-green-400/80' : 'text-red-400'}>
+                  {o.ok ? '✓' : '✗'}
+                </span>
+                <span className="uppercase">{o.side}</span>
+                <span className="text-foreground">{o.symbol}</span>
+                <span>×{o.qty}</span>
+                {o.error && <span className="text-red-400/80 truncate">{o.error}</span>}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
