@@ -7,12 +7,14 @@ import { addSymbol } from "@/app/actions";
 import { placeOrderAction } from "@/app/alpaca-actions";
 import { AnalystRatingsPanel } from "@/components/AnalystRatingsPanel";
 import { DerivativesPanel } from "@/components/DerivativesPanel";
+import { AttractivenessBreakdown } from "@/components/AttractivenessBreakdown";
 import { ISIN_MAP } from "@/lib/market-data";
+import { AttractivenessResult } from "@/lib/attractiveness";
 import type { QuoteRow } from "@/app/api/market-quotes/route";
 
 const EXCHANGES = ["Dow Jones", "Nasdaq 100", "DAX"] as const;
 type Exchange = (typeof EXCHANGES)[number];
-type PanelType = "ratings" | "derivatives";
+type PanelType = "ratings" | "derivatives" | "attractiveness";
 
 type ActivePanel = { symbol: string; type: PanelType } | null;
 type BuyState = { symbol: string; qty: string } | null;
@@ -25,6 +27,8 @@ export function MarketTable() {
   const [activePanel, setActivePanel] = useState<ActivePanel>(null);
   const [buying, setBuying] = useState<BuyState>(null);
   const [watchedSymbols, setWatchedSymbols] = useState<Set<string>>(new Set());
+  const [scoreDetails, setScoreDetails] = useState<Record<string, AttractivenessResult>>({});
+  const [loadingScores, setLoadingScores] = useState(false);
 
   const fetchQuotes = useCallback(async (ex: Exchange) => {
     setLoading(true);
@@ -48,8 +52,26 @@ export function MarketTable() {
     fetchQuotes(exchange);
   }, [exchange, fetchQuotes]);
 
+  async function fetchScoreDetails() {
+    if (Object.keys(scoreDetails).length > 0) return; // Already loaded
+    setLoadingScores(true);
+    try {
+      const res = await fetch("/api/rebalance");
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      setScoreDetails(data.scoreDetails ?? {});
+    } catch (e) {
+      console.error("Failed to load attractiveness scores:", e);
+    } finally {
+      setLoadingScores(false);
+    }
+  }
+
   function togglePanel(symbol: string, type: PanelType) {
     setBuying(null);
+    if (type === "attractiveness") {
+      fetchScoreDetails();
+    }
     setActivePanel((prev) =>
       prev?.symbol === symbol && prev.type === type ? null : { symbol, type }
     );
@@ -268,6 +290,19 @@ export function MarketTable() {
                               <Layers className="h-3 w-3" />
                               Derivs
                             </button>
+                            <button
+                              type="button"
+                              onClick={() => togglePanel(row.symbol, "attractiveness")}
+                              title="Attractiveness score breakdown"
+                              className={`h-7 px-1.5 rounded-md flex items-center gap-1 text-[10px] font-mono transition-all border ${
+                                isActive && activePanel?.type === "attractiveness"
+                                  ? "text-cyan-400 bg-cyan-500/10 border-cyan-500/25"
+                                  : "text-muted-foreground border-transparent hover:text-cyan-400 hover:bg-cyan-500/10 hover:border-cyan-500/20"
+                              }`}
+                            >
+                              <TrendingUp className="h-3 w-3" />
+                              Score
+                            </button>
                           </div>
                         )}
                       </td>
@@ -282,8 +317,19 @@ export function MarketTable() {
                         >
                           {activePanel.type === "ratings" ? (
                             <AnalystRatingsPanel symbol={row.symbol} currency={row.currency} />
-                          ) : (
+                          ) : activePanel.type === "derivatives" ? (
                             <DerivativesPanel symbol={row.symbol} isin={ISIN_MAP[row.symbol]} />
+                          ) : (
+                            loadingScores ? (
+                              <div className="text-xs text-muted-foreground py-4">Loading score details...</div>
+                            ) : scoreDetails[row.symbol] ? (
+                              <AttractivenessBreakdown
+                                result={scoreDetails[row.symbol]}
+                                symbol={row.symbol}
+                              />
+                            ) : (
+                              <div className="text-xs text-muted-foreground py-4">No score data available</div>
+                            )
                           )}
                         </td>
                       </tr>
