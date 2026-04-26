@@ -16,14 +16,25 @@ from datetime import datetime, timezone
 import urllib.request
 import json
 from typing import Optional
+from pathlib import Path
 
 from supabase import create_client
 
-SUPABASE_URL = os.environ["SUPABASE_URL"]
+# Load .env.local if it exists and env vars aren't set
+env_file = Path(__file__).parent.parent / ".env.local"
+if env_file.exists() and "SUPABASE_URL" not in os.environ:
+    for line in env_file.read_text().splitlines():
+        if line and not line.startswith("#"):
+            key, _, value = line.partition("=")
+            if key.startswith("NEXT_PUBLIC_"):
+                key = key.replace("NEXT_PUBLIC_", "")
+            os.environ.setdefault(key.strip(), value.strip())
+
+SUPABASE_URL = os.environ.get("SUPABASE_URL") or os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_ROLE = os.environ["SUPABASE_SERVICE_ROLE"]
 FRED_API_KEY = os.environ.get("FRED_API_KEY", "")
 
-FRED_BASE = "https://api.stlouisfed.org/fred/series"
+FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
 
 INDICATORS = {
     "DFF": "Fed Funds Rate (%)",
@@ -39,7 +50,7 @@ def fetch_fred_series(series_id: str, limit: int = 1) -> Optional[dict]:
         return None
 
     try:
-        url = f"{FRED_BASE}/{series_id}/observations?api_key={FRED_API_KEY}&limit={limit}&sort_order=desc"
+        url = f"{FRED_BASE}?series_id={series_id}&api_key={FRED_API_KEY}&limit={limit}&sort_order=desc&file_type=json"
         with urllib.request.urlopen(url, timeout=10) as response:
             data = json.loads(response.read().decode())
             if data.get("observations"):
