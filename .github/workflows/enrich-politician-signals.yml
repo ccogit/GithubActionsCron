@@ -1,29 +1,35 @@
 name: Enrich Politician Signals
 
+# Enriches politician_trade_summary with news sentiment (Yahoo Finance + VADER)
+# and trends direction (volume/price momentum). Runs after the politician trades
+# refresh so enrichment always operates on the latest trade data.
+#
+# No API keys required — uses yfinance for all data.
+# Typical runtime: ~2 minutes (8 parallel workers, ~150 symbols).
+#
+# Required secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE
+
 on:
   schedule:
-    - cron: '30 8 * * *'  # Daily at 8:30am UTC (after trades refresh)
+    - cron: '30 8 * * *'   # Daily at 08:30 UTC, after politician trades refresh
   workflow_dispatch:
 
 jobs:
   enrich-signals:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.13'
 
       - name: Install dependencies
-        run: pip install requests "supabase>=2.15.0" textblob nltk pytrends
+        run: pip install yfinance nltk "supabase>=2.15.0"
 
       - name: Enrich politician signals
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-          NEWSAPI_KEY: ${{ secrets.NEWSAPI_KEY }}
         run: python worker/enrich_politician_signals.py
