@@ -10,7 +10,6 @@ Stores aggregated unusual volume and call/put ratio per symbol.
 import os
 import sys
 import time
-import math
 import pandas as pd
 import yfinance as yf
 from datetime import datetime, timezone
@@ -78,23 +77,24 @@ def get_options_flow(symbol: str) -> Optional[dict]:
                 continue
 
             for opt_type, df in [("call", chain.calls), ("put", chain.puts)]:
-                for _, row in df.iterrows():
-                    # Handle NaN values which cause int() to fail
-                    raw_vol = row.get("volume", 0)
-                    raw_oi = row.get("openInterest", 0)
-                    
-                    vol = int(raw_vol) if not pd.isna(raw_vol) else 0
-                    oi = int(raw_oi) if not pd.isna(raw_oi) else 0
+                try:
+                    # Coerce to numeric first — handles NaN, pd.NA, None, inf
+                    vol = pd.to_numeric(df["volume"], errors="coerce").fillna(0)
+                    oi  = pd.to_numeric(df["openInterest"], errors="coerce").fillna(0)
 
-                    if oi <= 0 or vol <= 0:
-                        continue
-                    total_contracts_checked += 1
-                    if vol >= oi * VOLUME_OI_RATIO_THRESHOLD:
-                        total_unusual_volume += vol
-                        if opt_type == "call":
-                            unusual_calls += 1
-                        else:
-                            unusual_puts += 1
+                    valid = (oi > 0) & (vol > 0)
+                    total_contracts_checked += int(valid.sum())
+
+                    unusual_mask = valid & (vol >= oi * VOLUME_OI_RATIO_THRESHOLD)
+                    count = int(unusual_mask.sum())
+                    total_unusual_volume += int(vol[unusual_mask].sum())
+
+                    if opt_type == "call":
+                        unusual_calls += count
+                    else:
+                        unusual_puts += count
+                except Exception:
+                    continue
 
         total_unusual = unusual_calls + unusual_puts
         if total_unusual < MIN_UNUSUAL_CONTRACTS:
