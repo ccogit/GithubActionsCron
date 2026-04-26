@@ -8,6 +8,7 @@ import { PoliticianTrades } from '@/components/PoliticianTrades';
 import { AlertsTable } from '@/components/AlertsTable';
 import { MarketTable } from '@/components/MarketTable';
 import { SpotlightDiscovery } from '@/components/SpotlightDiscovery';
+import { MacroContextWidget } from '@/components/MacroContextWidget';
 import type { AlertLogRow } from '@/lib/types';
 
 type TabId = 'spotlight' | 'analysts' | 'investors' | 'politicians' | 'alerts' | 'explore';
@@ -130,6 +131,7 @@ export function MarketTabs({ alerts }: MarketTabsProps) {
       <div className="pt-6 min-h-[200px]">
         {active === 'spotlight' && (
           <div>
+            <MacroContextWidget />
             <div className="flex items-baseline gap-2 mb-1">
               <Sparkles className="w-4 h-4 text-yellow-400 self-center" />
               <h3 className="text-sm font-semibold">Cross-Signal Discovery</h3>

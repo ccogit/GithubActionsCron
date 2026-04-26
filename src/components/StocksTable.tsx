@@ -36,6 +36,8 @@ export type SymbolSignals = {
   insider_signal?: string | null;
   eps_beat_rate?: number | null;
   wsb_sentiment?: string | null;
+  fed_rate?: number | null;
+  unemployment?: number | null;
 };
 
 type Props = {

@@ -53,8 +53,9 @@ type ShortRow = { symbol: string; short_pct_float: number | null };
 type InsiderRow = { symbol: string; signal: string | null };
 type EarningsRow = { symbol: string; beat_rate: number | null };
 type SocialRow = { symbol: string; wsb_sentiment: string | null };
+type EconomicRow = { indicator: string; value: number | null };
 
-function computeScore(stock: DiscoveryStock): void {
+function computeScore(stock: DiscoveryStock, fedRate?: number | null, unemployment?: number | null): void {
   const r = computeAttractiveness({
     upside_pct: stock.upside_pct,
     buy_count: stock.buy_count,
@@ -68,6 +69,8 @@ function computeScore(stock: DiscoveryStock): void {
     insider_signal: stock.insider_signal,
     eps_beat_rate: stock.eps_beat_rate,
     wsb_sentiment: stock.wsb_sentiment,
+    fed_rate: fedRate,
+    unemployment,
   });
   stock.score = r.score;
   stock.signalCount = r.signalCount;
@@ -79,7 +82,7 @@ export async function GET() {
   try {
     const db = createClient();
 
-    const [constituentsRes, analystRes, politicianRes, ratingsRes, techRes, shortRes, insiderRes, earningsRes, socialRes] =
+    const [constituentsRes, analystRes, politicianRes, ratingsRes, techRes, shortRes, insiderRes, earningsRes, socialRes, ecoRes] =
       await Promise.all([
         db.from("index_constituents").select("symbol, name, exchange, exchange_type").eq("active", true),
         db.from("analyst_cache").select("symbol, target_mean, current_price, upside_pct, n_analysts").not("upside_pct", "is", null),
@@ -90,7 +93,12 @@ export async function GET() {
         db.from("insider_signals").select("symbol, signal"),
         db.from("earnings_signals").select("symbol, beat_rate"),
         db.from("social_sentiment").select("symbol, wsb_sentiment"),
+        db.from("economic_indicators").select("indicator, value"),
       ]);
+
+    // Extract macro indicators
+    const fedRate = (ecoRes.data as EconomicRow[] | null)?.find(r => r.indicator === "DFF")?.value ?? null;
+    const unemployment = (ecoRes.data as EconomicRow[] | null)?.find(r => r.indicator === "UNRATE")?.value ?? null;
 
     const allConstituents = (constituentsRes.data ?? []) as Constituent[];
     const byExchange = new Map<Exchange, Constituent[]>();
@@ -170,7 +178,7 @@ export async function GET() {
       s.trends_direction = row.trends_direction;
     }
 
-    for (const stock of stockMap.values()) computeScore(stock);
+    for (const stock of stockMap.values()) computeScore(stock, fedRate, unemployment);
 
     const top = Array.from(stockMap.values())
       .filter((s) => s.signalCount >= 2 && Math.abs(s.score) >= 2)

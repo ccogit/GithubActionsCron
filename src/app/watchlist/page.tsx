@@ -70,11 +70,11 @@ export default async function StocksPage() {
 
   const ownedSymbols = holdings.map((h) => h.symbol);
 
-  // Fetch all signals + historical bar changes in parallel
+  // Fetch all signals + historical bar changes + macro context in parallel
   const signalsBySymbol: Record<string, SymbolSignals> = {};
   let historicalChanges: Record<string, HistoricalChanges> = {};
   if (ownedSymbols.length > 0) {
-    const [barChanges, analystRes, politicianRes, ratingsRes, techRes, shortRes, insiderRes, earningsRes, socialRes] =
+    const [barChanges, analystRes, politicianRes, ratingsRes, techRes, shortRes, insiderRes, earningsRes, socialRes, ecoRes] =
       await Promise.all([
         getMultiBarChanges(ownedSymbols),
         db.from("analyst_cache").select("symbol, upside_pct").in("symbol", ownedSymbols),
@@ -85,8 +85,13 @@ export default async function StocksPage() {
         db.from("insider_signals").select("symbol, signal").in("symbol", ownedSymbols),
         db.from("earnings_signals").select("symbol, beat_rate").in("symbol", ownedSymbols),
         db.from("social_sentiment").select("symbol, wsb_sentiment").in("symbol", ownedSymbols),
+        db.from("economic_indicators").select("indicator, value"),
       ]);
     historicalChanges = barChanges;
+
+    // Extract macro indicators (global, same for all symbols)
+    const fedRate = (ecoRes.data as any[])?.find(r => r.indicator === "DFF")?.value ?? null;
+    const unemployment = (ecoRes.data as any[])?.find(r => r.indicator === "UNRATE")?.value ?? null;
 
     for (const sym of ownedSymbols) signalsBySymbol[sym] = { changePct: changes[sym] ?? null };
 
@@ -98,6 +103,11 @@ export default async function StocksPage() {
     for (const row of insiderRes.data ?? [])    signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], insider_signal: row.signal };
     for (const row of earningsRes.data ?? [])   signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], eps_beat_rate: row.beat_rate };
     for (const row of socialRes.data ?? [])     signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], wsb_sentiment: row.wsb_sentiment };
+
+    // Inject macro context (same for all symbols)
+    for (const sym of ownedSymbols) {
+      signalsBySymbol[sym] = { ...signalsBySymbol[sym], fed_rate: fedRate, unemployment };
+    }
   }
 
   return (
