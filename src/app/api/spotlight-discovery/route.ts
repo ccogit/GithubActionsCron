@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { fetchQuotesForExchange, type QuoteRow } from "@/lib/market-quotes";
-import { computeAttractiveness } from "@/lib/attractiveness";
+import { computeAttractiveness, type AttractivenessResult } from "@/lib/attractiveness";
 
 export const revalidate = 300;
 
@@ -42,6 +42,7 @@ interface DiscoveryStock {
   signalCount: number;
   outlook: "bullish" | "bearish" | "mixed";
   reasons: string[];
+  scoreDetails: AttractivenessResult; // Full breakdown with individual signals
 }
 
 type Constituent = { symbol: string; name: string; exchange: string; exchange_type: string };
@@ -76,6 +77,7 @@ function computeScore(stock: DiscoveryStock, fedRate?: number | null, unemployme
   stock.signalCount = r.signalCount;
   stock.outlook = r.outlook;
   stock.reasons = r.reasons;
+  stock.scoreDetails = r;
 }
 
 export async function GET() {
@@ -156,6 +158,7 @@ export async function GET() {
           signalCount: 0,
           outlook: "mixed",
           reasons: [],
+          scoreDetails: { score: 0, signalCount: 0, outlook: "mixed", reasons: [], signals: [] },
         };
         stockMap.set(symbol, s);
       }

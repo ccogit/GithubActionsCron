@@ -17,9 +17,12 @@ import {
   UserCheck,
   Target,
   MessageCircle,
+  ChevronDown,
 } from 'lucide-react';
 import { placeOrderAction } from '@/app/alpaca-actions';
 import { Input } from '@/components/ui/input';
+import { AttractivenessBreakdown } from '@/components/AttractivenessBreakdown';
+import { AttractivenessResult } from '@/lib/attractiveness';
 
 interface DiscoveryStock {
   symbol: string;
@@ -44,6 +47,7 @@ interface DiscoveryStock {
   signalCount: number;
   outlook: 'bullish' | 'bearish' | 'mixed';
   reasons: string[];
+  scoreDetails: AttractivenessResult;
 }
 
 const outlookStyles = {
@@ -87,6 +91,7 @@ export function SpotlightDiscovery() {
   const [buyingSymbol, setBuyingSymbol] = useState<string | null>(null);
   const [buyQty, setBuyQty] = useState('1');
   const [submitting, setSubmitting] = useState(false);
+  const [expandedSymbol, setExpandedSymbol] = useState<string | null>(null);
 
   const fetchStocks = useCallback(async (showRefreshing = false) => {
     if (showRefreshing) setRefreshing(true);
@@ -321,6 +326,32 @@ export function SpotlightDiscovery() {
                 </MiniPill>
               )}
             </div>
+
+            {/* Breakdown button */}
+            <div className="pt-2 mb-2">
+              <button
+                type="button"
+                onClick={() => setExpandedSymbol(expandedSymbol === stock.symbol ? null : stock.symbol)}
+                className="w-full flex items-center justify-between px-2 py-1.5 rounded text-xs font-medium text-cyan-400 hover:bg-cyan-500/10 transition-colors"
+              >
+                <span>Score Breakdown</span>
+                <ChevronDown
+                  className={`w-3 h-3 transition-transform ${
+                    expandedSymbol === stock.symbol ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Expanded breakdown */}
+            {expandedSymbol === stock.symbol && (
+              <div className="mb-3 p-3 rounded bg-white/5 border border-cyan-500/20">
+                <AttractivenessBreakdown
+                  result={stock.scoreDetails}
+                  symbol={stock.symbol}
+                />
+              </div>
+            )}
 
             {/* Buy action */}
             <div className="pt-3 border-t border-white/10">
