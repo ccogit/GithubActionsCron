@@ -1,0 +1,29 @@
+name: Refresh Index Constituents
+
+on:
+  schedule:
+    # Sundays at 02:00 UTC — indexes rebalance quarterly, weekly is plenty
+    - cron: '0 2 * * 0'
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: pip install requests pandas lxml "supabase>=2.15.0"
+
+      - name: Refresh index constituents
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: python worker/refresh_index_constituents.py

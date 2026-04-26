@@ -1,5 +1,3 @@
-import { INDEX_STOCKS, EXCHANGE_TYPE } from "@/lib/market-data";
-
 const ALPACA_DATA = "https://data.alpaca.markets/v2";
 
 const YAHOO_HEADERS = {
@@ -90,13 +88,15 @@ async function fetchYahooQuotes(symbols: string[]): Promise<Record<string, RawQu
   return out;
 }
 
-export async function fetchQuotesForExchange(exchange: string): Promise<QuoteRow[]> {
-  const stocks = INDEX_STOCKS[exchange] ?? [];
-  const type = EXCHANGE_TYPE[exchange] ?? "us";
+export async function fetchQuotesForExchange(
+  stocks: { symbol: string; name: string }[],
+  exchangeType: "us" | "de"
+): Promise<QuoteRow[]> {
+  if (!stocks.length) return [];
   const symbols = stocks.map((s) => s.symbol);
 
   const quotes =
-    type === "us" ? await fetchAlpacaQuotes(symbols) : await fetchYahooQuotes(symbols);
+    exchangeType === "us" ? await fetchAlpacaQuotes(symbols) : await fetchYahooQuotes(symbols);
 
   return stocks.map((s) => {
     const q = quotes[s.symbol];
@@ -106,7 +106,7 @@ export async function fetchQuotesForExchange(exchange: string): Promise<QuoteRow
       price: q?.price ?? null,
       change: q?.change ?? null,
       changePct: q?.changePct ?? null,
-      currency: type === "de" ? "EUR" : "USD",
+      currency: exchangeType === "de" ? "EUR" : "USD",
     };
   });
 }

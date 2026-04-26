@@ -4,28 +4,31 @@ import { fetchQuotesForExchange, type QuoteRow } from "@/lib/market-quotes";
 export const revalidate = 300;
 
 const EXCHANGES = ["Dow Jones", "Nasdaq 100", "DAX"] as const;
+type Exchange = (typeof EXCHANGES)[number];
+
+const EXCHANGE_TYPE: Record<Exchange, "us" | "de"> = {
+  "Dow Jones": "us",
+  "Nasdaq 100": "us",
+  DAX: "de",
+};
 
 interface DiscoveryStock {
   symbol: string;
   exchange: string | null;
   name: string | null;
 
-  // Analyst signals
   upside_pct: number | null;
   current_price: number | null;
   target_mean: number | null;
   n_analysts: number | null;
 
-  // Investor signals (today's flow)
   changePct: number | null;
 
-  // Politician + sentiment signals
   buy_count: number;
   sell_count: number;
   news_sentiment: number | null;
   trends_direction: string | null;
 
-  // Computed
   score: number;
   signalCount: number;
   outlook: "bullish" | "bearish" | "mixed";
@@ -48,77 +51,62 @@ type PoliticianRow = {
   trends_direction: string | null;
 };
 
-function score(stock: DiscoveryStock): void {
+type Constituent = { symbol: string; name: string; exchange: string; exchange_type: string };
+
+function computeScore(stock: DiscoveryStock): void {
   let s = 0;
   let count = 0;
   const reasons: string[] = [];
 
-  // Analyst upside (heavier weight)
   if (stock.upside_pct != null) {
     if (stock.upside_pct > 15) {
-      s += 2;
-      count++;
+      s += 2; count++;
       reasons.push(`+${stock.upside_pct.toFixed(0)}% analyst upside`);
     } else if (stock.upside_pct > 5) {
-      s += 1;
-      count++;
+      s += 1; count++;
     } else if (stock.upside_pct < -10) {
-      s -= 2;
-      count++;
+      s -= 2; count++;
       reasons.push(`${stock.upside_pct.toFixed(0)}% analyst downside`);
     } else if (stock.upside_pct < -3) {
-      s -= 1;
-      count++;
+      s -= 1; count++;
     }
   }
 
-  // Politicians
   const trades = stock.buy_count + stock.sell_count;
   if (trades >= 3) {
     const ratio = stock.buy_count / trades;
     if (ratio > 0.7) {
-      s += 1;
-      count++;
+      s += 1; count++;
       reasons.push(`${stock.buy_count} politicians buying`);
     } else if (ratio < 0.3) {
-      s -= 1;
-      count++;
+      s -= 1; count++;
       reasons.push(`${stock.sell_count} politicians selling`);
     }
   }
 
-  // News sentiment
   if (stock.news_sentiment != null) {
     if (stock.news_sentiment > 0.2) {
-      s += 1;
-      count++;
-      reasons.push(`positive news`);
+      s += 1; count++;
+      reasons.push("positive news");
     } else if (stock.news_sentiment < -0.2) {
-      s -= 1;
-      count++;
-      reasons.push(`negative news`);
+      s -= 1; count++;
+      reasons.push("negative news");
     }
   }
 
-  // Trends
   if (stock.trends_direction === "rising") {
-    s += 1;
-    count++;
-    reasons.push(`rising interest`);
+    s += 1; count++;
+    reasons.push("rising interest");
   } else if (stock.trends_direction === "falling") {
-    s -= 1;
-    count++;
+    s -= 1; count++;
   }
 
-  // Today's price action
   if (stock.changePct != null) {
     if (stock.changePct > 5) {
-      s += 1;
-      count++;
+      s += 1; count++;
       reasons.push(`+${stock.changePct.toFixed(1)}% today`);
     } else if (stock.changePct < -5) {
-      s -= 1;
-      count++;
+      s -= 1; count++;
       reasons.push(`${stock.changePct.toFixed(1)}% today`);
     }
   }
@@ -133,7 +121,12 @@ export async function GET() {
   try {
     const db = createClient();
 
-    const [analystRes, politicianRes, dowQ, nasdaqQ, daxQ] = await Promise.all([
+    // Step 1: fetch constituents, analyst data, and politician signals in parallel
+    const [constituentsRes, analystRes, politicianRes] = await Promise.all([
+      db
+        .from("index_constituents")
+        .select("symbol, name, exchange, exchange_type")
+        .eq("active", true),
       db
         .from("analyst_cache")
         .select("symbol, target_mean, current_price, upside_pct, n_analysts")
@@ -141,19 +134,32 @@ export async function GET() {
       db
         .from("politician_trade_summary")
         .select("symbol, buy_count, sell_count, news_sentiment, trends_direction"),
-      fetchQuotesForExchange("Dow Jones"),
-      fetchQuotesForExchange("Nasdaq 100"),
-      fetchQuotesForExchange("DAX"),
     ]);
+
+    const allConstituents = (constituentsRes.data ?? []) as Constituent[];
+    const byExchange = new Map<Exchange, Constituent[]>();
+    for (const c of allConstituents) {
+      if (!byExchange.has(c.exchange as Exchange))
+        byExchange.set(c.exchange as Exchange, []);
+      byExchange.get(c.exchange as Exchange)!.push(c);
+    }
+
+    // Step 2: fetch live quotes for all exchanges in parallel
+    const quoteResults = await Promise.all(
+      EXCHANGES.map((ex) =>
+        fetchQuotesForExchange(byExchange.get(ex) ?? [], EXCHANGE_TYPE[ex]).then(
+          (quotes) => [ex, quotes] as const
+        )
+      )
+    );
+
+    const quoteMap = new Map<string, { quote: QuoteRow; exchange: Exchange }>();
+    for (const [exchange, quotes] of quoteResults) {
+      for (const q of quotes) quoteMap.set(q.symbol, { quote: q, exchange });
+    }
 
     const analystRows = (analystRes.data ?? []) as AnalystRow[];
     const politicianRows = (politicianRes.data ?? []) as PoliticianRow[];
-
-    const quoteMap = new Map<string, { quote: QuoteRow; exchange: string }>();
-    for (const ex of EXCHANGES) {
-      const quotes = ex === "Dow Jones" ? dowQ : ex === "Nasdaq 100" ? nasdaqQ : daxQ;
-      for (const q of quotes) quoteMap.set(q.symbol, { quote: q, exchange: ex });
-    }
 
     const stockMap = new Map<string, DiscoveryStock>();
 
@@ -200,7 +206,7 @@ export async function GET() {
       s.trends_direction = row.trends_direction;
     }
 
-    for (const stock of stockMap.values()) score(stock);
+    for (const stock of stockMap.values()) computeScore(stock);
 
     const top = Array.from(stockMap.values())
       .filter((s) => s.signalCount >= 2 && s.outlook !== "mixed")

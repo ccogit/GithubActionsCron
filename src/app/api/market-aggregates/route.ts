@@ -1,10 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
-import { INDEX_STOCKS } from "@/lib/market-data";
 import { fetchQuotesForExchange, type QuoteRow } from "@/lib/market-quotes";
 
 export const revalidate = 300;
 
 const EXCHANGES = ["Dow Jones", "Nasdaq 100", "DAX"] as const;
+type Exchange = (typeof EXCHANGES)[number];
 
 interface HotStock {
   exchange: string;
@@ -38,7 +38,16 @@ type AnalystCacheRow = {
   n_analysts: number | null;
 };
 
-async function fetchEarningsThisWeek(): Promise<Earning[]> {
+type Constituent = {
+  symbol: string;
+  name: string;
+  exchange: string;
+  exchange_type: string;
+};
+
+async function fetchEarningsThisWeek(
+  indexSymbols: Set<string>
+): Promise<Earning[]> {
   const apiKey = process.env.FINNHUB_API_KEY;
   if (!apiKey) return [];
 
@@ -55,13 +64,11 @@ async function fetchEarningsThisWeek(): Promise<Earning[]> {
 
     if (!res.ok) return [];
 
-    const indexSymbols = new Set(
-      Object.values(INDEX_STOCKS).flat().map((s) => s.symbol.replace(".DE", ""))
-    );
-
     const data = await res.json();
-    const all: Earning[] = (data.earnings || [])
-      .filter((e: { symbol: string }) => indexSymbols.has(e.symbol))
+    return (data.earnings || [])
+      .filter((e: { symbol: string }) =>
+        indexSymbols.has(e.symbol.replace(".DE", ""))
+      )
       .slice(0, 10)
       .map((e: { symbol: string; date?: string; epsEstimate?: number }) => ({
         symbol: e.symbol,
@@ -69,8 +76,6 @@ async function fetchEarningsThisWeek(): Promise<Earning[]> {
         date: e.date || "",
         epsEstimate: e.epsEstimate ?? null,
       }));
-
-    return all;
   } catch (error) {
     console.error("Error fetching earnings:", error);
     return [];
@@ -81,18 +86,34 @@ export async function GET() {
   try {
     const db = createClient();
 
-    // Fetch quotes for all 3 exchanges and analyst cache in parallel
-    const [dowQuotes, nasdaqQuotes, daxQuotes, cacheRes] = await Promise.all([
-      fetchQuotesForExchange("Dow Jones"),
-      fetchQuotesForExchange("Nasdaq 100"),
-      fetchQuotesForExchange("DAX"),
+    // Step 1: fetch constituents and analyst cache in parallel
+    const [constituentsRes, cacheRes] = await Promise.all([
+      db
+        .from("index_constituents")
+        .select("symbol, name, exchange, exchange_type")
+        .eq("active", true),
       db.from("analyst_cache").select("symbol, target_mean, n_analysts"),
+    ]);
+
+    const allConstituents = (constituentsRes.data ?? []) as Constituent[];
+    const byExchange = new Map<Exchange, Constituent[]>();
+    for (const c of allConstituents) {
+      if (!byExchange.has(c.exchange as Exchange))
+        byExchange.set(c.exchange as Exchange, []);
+      byExchange.get(c.exchange as Exchange)!.push(c);
+    }
+
+    // Step 2: fetch live quotes for all three exchanges in parallel
+    const [dowQuotes, nasdaqQuotes, daxQuotes] = await Promise.all([
+      fetchQuotesForExchange(byExchange.get("Dow Jones") ?? [], "us"),
+      fetchQuotesForExchange(byExchange.get("Nasdaq 100") ?? [], "us"),
+      fetchQuotesForExchange(byExchange.get("DAX") ?? [], "de"),
     ]);
 
     const cached = (cacheRes.data ?? []) as AnalystCacheRow[];
     const cacheMap = new Map(cached.map((c) => [c.symbol, c]));
 
-    const quotesByExchange: Record<string, QuoteRow[]> = {
+    const quotesByExchange: Record<Exchange, QuoteRow[]> = {
       "Dow Jones": dowQuotes,
       "Nasdaq 100": nasdaqQuotes,
       DAX: daxQuotes,
@@ -126,7 +147,8 @@ export async function GET() {
     for (const exchange of EXCHANGES) {
       const candidates: Mover[] = [];
       for (const quote of quotesByExchange[exchange]) {
-        if (quote.price == null || quote.change == null || quote.changePct == null) continue;
+        if (quote.price == null || quote.change == null || quote.changePct == null)
+          continue;
         candidates.push({
           exchange,
           symbol: quote.symbol,
@@ -140,7 +162,8 @@ export async function GET() {
       topMovers.push(...candidates.slice(0, 3));
     }
 
-    const earnings = await fetchEarningsThisWeek();
+    const indexSymbols = new Set(allConstituents.map((c) => c.symbol.replace(".DE", "")));
+    const earnings = await fetchEarningsThisWeek(indexSymbols);
 
     return Response.json({ hotStocks, topMovers, earnings });
   } catch (error) {

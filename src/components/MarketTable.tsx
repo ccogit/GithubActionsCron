@@ -7,7 +7,7 @@ import { addSymbol } from "@/app/actions";
 import { placeOrderAction } from "@/app/alpaca-actions";
 import { AnalystRatingsPanel } from "@/components/AnalystRatingsPanel";
 import { DerivativesPanel } from "@/components/DerivativesPanel";
-import { INDEX_STOCKS, ISIN_MAP } from "@/lib/market-data";
+import { ISIN_MAP } from "@/lib/market-data";
 import type { QuoteRow } from "@/app/api/market-quotes/route";
 
 const EXCHANGES = ["Dow Jones", "Nasdaq 100", "DAX"] as const;
@@ -36,17 +36,7 @@ export function MarketTable() {
       setRows(data.rows ?? []);
     } catch (e) {
       setError(String(e));
-      // Fall back to static list with no price data
-      setRows(
-        (INDEX_STOCKS[ex] ?? []).map((s) => ({
-          symbol: s.symbol,
-          name: s.name,
-          price: null,
-          change: null,
-          changePct: null,
-          currency: ex === "DAX" ? "EUR" : "USD",
-        }))
-      );
+      setRows([]);
     } finally {
       setLoading(false);
     }

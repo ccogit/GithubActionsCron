@@ -1,5 +1,4 @@
 import { createClient } from "@/lib/supabase/server";
-import { INDEX_STOCKS } from "@/lib/market-data";
 import type { NextRequest } from "next/server";
 
 async function getAnalystTarget(symbol: string): Promise<{
@@ -82,9 +81,11 @@ export async function POST(request: NextRequest) {
 
   try {
     const db = createClient();
-    const allSymbols = Object.values(INDEX_STOCKS)
-      .flat()
-      .map((s) => s.symbol);
+    const { data: constituents } = await db
+      .from("index_constituents")
+      .select("symbol")
+      .eq("active", true);
+    const allSymbols = (constituents ?? []).map((c: { symbol: string }) => c.symbol);
 
     const updated: string[] = [];
 
