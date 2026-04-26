@@ -174,6 +174,6 @@ export function computeAttractiveness(s: AttractivenessSignals): AttractivenessR
     score,
     signalCount: count,
     outlook: score >= 3 ? "bullish" : score <= -3 ? "bearish" : "mixed",
-    reasons: reasons.slice(0, 3),
+    reasons,
   };
 }

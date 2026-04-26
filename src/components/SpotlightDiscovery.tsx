@@ -11,6 +11,12 @@ import {
   ShoppingCart,
   Check,
   X,
+  BarChart2,
+  Zap,
+  AlertTriangle,
+  UserCheck,
+  Target,
+  MessageCircle,
 } from 'lucide-react';
 import { placeOrderAction } from '@/app/alpaca-actions';
 import { Input } from '@/components/ui/input';
@@ -28,6 +34,12 @@ interface DiscoveryStock {
   sell_count: number;
   news_sentiment: number | null;
   trends_direction: string | null;
+  consensus_score: number | null;
+  tech_signal: string | null;
+  short_pct_float: number | null;
+  insider_signal: string | null;
+  eps_beat_rate: number | null;
+  wsb_sentiment: string | null;
   score: number;
   signalCount: number;
   outlook: 'bullish' | 'bearish' | 'mixed';
@@ -197,69 +209,115 @@ export function SpotlightDiscovery() {
               </div>
             )}
 
-            {/* Signal pills */}
-            <div className="flex flex-wrap gap-1 mb-3 flex-1">
+            {/* Signal pills — one per signal type, only shown when data exists */}
+            <div className="flex flex-wrap gap-1 mb-3 flex-1 content-start">
               {stock.upside_pct != null && (
                 <MiniPill
                   icon={<Sparkles className="w-2.5 h-2.5" />}
                   tone={stock.upside_pct > 5 ? 'green' : stock.upside_pct < -3 ? 'red' : 'gray'}
-                  title="Analyst upside"
+                  title="Analyst price-target upside"
                 >
-                  {stock.upside_pct > 0 ? '+' : ''}
-                  {stock.upside_pct.toFixed(0)}%
+                  {stock.upside_pct > 0 ? '+' : ''}{stock.upside_pct.toFixed(0)}% upside
                 </MiniPill>
               )}
 
-              {stock.buy_count + stock.sell_count > 0 && (
+              {stock.consensus_score != null && Math.abs(stock.consensus_score) > 0.2 && (
+                <MiniPill
+                  icon={<BarChart2 className="w-2.5 h-2.5" />}
+                  tone={stock.consensus_score > 0.5 ? 'green' : stock.consensus_score < -0.5 ? 'red' : 'yellow'}
+                  title={`Analyst buy/sell consensus score: ${stock.consensus_score.toFixed(2)}`}
+                >
+                  {stock.consensus_score > 0 ? 'buy' : 'sell'} consensus
+                </MiniPill>
+              )}
+
+              {stock.tech_signal && stock.tech_signal !== 'neutral' && (
+                <MiniPill
+                  icon={<Zap className="w-2.5 h-2.5" />}
+                  tone={stock.tech_signal === 'buy' ? 'green' : 'red'}
+                  title="Composite technical signal (RSI + SMA + MACD)"
+                >
+                  tech {stock.tech_signal}
+                </MiniPill>
+              )}
+
+              {stock.buy_count + stock.sell_count >= 3 && (
                 <MiniPill
                   icon={<Landmark className="w-2.5 h-2.5" />}
                   tone={stock.buy_count > stock.sell_count ? 'green' : 'red'}
-                  title="Congressional trades (buys / sells)"
+                  title={`Congressional trades — ${stock.buy_count} buys, ${stock.sell_count} sells`}
                 >
-                  {stock.buy_count}/{stock.sell_count}
+                  {stock.buy_count}↑ {stock.sell_count}↓ congress
                 </MiniPill>
               )}
 
-              {stock.news_sentiment != null && (
+              {stock.insider_signal && stock.insider_signal !== 'neutral' && (
+                <MiniPill
+                  icon={<UserCheck className="w-2.5 h-2.5" />}
+                  tone={stock.insider_signal === 'buying' ? 'green' : 'red'}
+                  title="Corporate insider open-market transactions (last 90 days)"
+                >
+                  insiders {stock.insider_signal}
+                </MiniPill>
+              )}
+
+              {stock.eps_beat_rate != null && (stock.eps_beat_rate >= 0.75 || stock.eps_beat_rate <= 0.25) && (
+                <MiniPill
+                  icon={<Target className="w-2.5 h-2.5" />}
+                  tone={stock.eps_beat_rate >= 0.75 ? 'green' : 'red'}
+                  title={`EPS beat rate over last 4 quarters: ${(stock.eps_beat_rate * 100).toFixed(0)}%`}
+                >
+                  {(stock.eps_beat_rate * 100).toFixed(0)}% beat rate
+                </MiniPill>
+              )}
+
+              {stock.short_pct_float != null && stock.short_pct_float > 0.1 && (
+                <MiniPill
+                  icon={<AlertTriangle className="w-2.5 h-2.5" />}
+                  tone={stock.short_pct_float > 0.15 ? 'red' : 'yellow'}
+                  title={`Short interest: ${(stock.short_pct_float * 100).toFixed(1)}% of float`}
+                >
+                  {(stock.short_pct_float * 100).toFixed(0)}% short
+                </MiniPill>
+              )}
+
+              {stock.wsb_sentiment && stock.wsb_sentiment !== 'Neutral' && (
+                <MiniPill
+                  icon={<MessageCircle className="w-2.5 h-2.5" />}
+                  tone={stock.wsb_sentiment === 'Bullish' ? 'green' : 'red'}
+                  title="Reddit / WallStreetBets sentiment"
+                >
+                  WSB {stock.wsb_sentiment.toLowerCase()}
+                </MiniPill>
+              )}
+
+              {stock.news_sentiment != null && Math.abs(stock.news_sentiment) > 0.1 && (
                 <MiniPill
                   icon={<Newspaper className="w-2.5 h-2.5" />}
-                  tone={
-                    stock.news_sentiment > 0.1
-                      ? 'green'
-                      : stock.news_sentiment < -0.1
-                      ? 'red'
-                      : 'yellow'
-                  }
-                  title="News sentiment"
+                  tone={stock.news_sentiment > 0.1 ? 'green' : 'red'}
+                  title={`News sentiment score: ${(stock.news_sentiment * 100).toFixed(0)}%`}
                 >
-                  {(stock.news_sentiment * 100).toFixed(0)}%
-                </MiniPill>
-              )}
-
-              {stock.changePct != null && Math.abs(stock.changePct) > 1 && (
-                <MiniPill
-                  icon={<Activity className="w-2.5 h-2.5" />}
-                  tone={stock.changePct > 0 ? 'green' : 'red'}
-                  title="Today's change"
-                >
-                  {stock.changePct > 0 ? '+' : ''}
-                  {stock.changePct.toFixed(1)}%
+                  {stock.news_sentiment > 0 ? '+' : ''}{(stock.news_sentiment * 100).toFixed(0)}% news
                 </MiniPill>
               )}
 
               {stock.trends_direction && stock.trends_direction !== 'stable' && (
                 <MiniPill
-                  icon={
-                    stock.trends_direction === 'rising' ? (
-                      <TrendingUp className="w-2.5 h-2.5" />
-                    ) : (
-                      <TrendingDown className="w-2.5 h-2.5" />
-                    )
-                  }
+                  icon={stock.trends_direction === 'rising' ? <TrendingUp className="w-2.5 h-2.5" /> : <TrendingDown className="w-2.5 h-2.5" />}
                   tone={stock.trends_direction === 'rising' ? 'green' : 'red'}
-                  title="Search interest trend"
+                  title="Google search interest trend"
                 >
-                  {stock.trends_direction}
+                  {stock.trends_direction} interest
+                </MiniPill>
+              )}
+
+              {stock.changePct != null && Math.abs(stock.changePct) > 3 && (
+                <MiniPill
+                  icon={<Activity className="w-2.5 h-2.5" />}
+                  tone={stock.changePct > 0 ? 'green' : 'red'}
+                  title="Today's price change"
+                >
+                  {stock.changePct > 0 ? '+' : ''}{stock.changePct.toFixed(1)}% today
                 </MiniPill>
               )}
             </div>
