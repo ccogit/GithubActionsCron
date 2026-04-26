@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { getPositions } from "@/lib/alpaca";
+import { getPositions, getMultiBarChanges, type HistoricalChanges } from "@/lib/alpaca";
 import { RealtimeWatchlist } from "@/components/RealtimeWatchlist";
 import { CollapsibleSection } from "@/components/CollapsibleSection";
 import { AddStockForms } from "@/components/AddStockForms";
@@ -70,11 +70,13 @@ export default async function StocksPage() {
 
   const ownedSymbols = holdings.map((h) => h.symbol);
 
-  // Fetch all signals for portfolio symbols to compute the overall attractiveness score
+  // Fetch all signals + historical bar changes in parallel
   const signalsBySymbol: Record<string, SymbolSignals> = {};
+  let historicalChanges: Record<string, HistoricalChanges> = {};
   if (ownedSymbols.length > 0) {
-    const [analystRes, politicianRes, ratingsRes, techRes, shortRes, insiderRes, earningsRes, socialRes] =
+    const [barChanges, analystRes, politicianRes, ratingsRes, techRes, shortRes, insiderRes, earningsRes, socialRes] =
       await Promise.all([
+        getMultiBarChanges(ownedSymbols),
         db.from("analyst_cache").select("symbol, upside_pct").in("symbol", ownedSymbols),
         db.from("politician_trade_summary").select("symbol, buy_count, sell_count, news_sentiment, trends_direction").in("symbol", ownedSymbols),
         db.from("analyst_ratings").select("symbol, consensus_score").in("symbol", ownedSymbols),
@@ -84,6 +86,7 @@ export default async function StocksPage() {
         db.from("earnings_signals").select("symbol, beat_rate").in("symbol", ownedSymbols),
         db.from("social_sentiment").select("symbol, wsb_sentiment").in("symbol", ownedSymbols),
       ]);
+    historicalChanges = barChanges;
 
     for (const sym of ownedSymbols) signalsBySymbol[sym] = { changePct: changes[sym] ?? null };
 
@@ -112,8 +115,8 @@ export default async function StocksPage() {
           <RealtimeWatchlist
             holdings={holdings}
             initialLatestPrices={latestPrices}
-            initialChanges={changes}
             initialTicksBySymbol={ticksBySymbol}
+            historicalChanges={historicalChanges}
             colors={CHART_COLORS}
             signals={signalsBySymbol}
           />

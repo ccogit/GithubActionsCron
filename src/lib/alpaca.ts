@@ -1,5 +1,6 @@
 const ENDPOINT =
   process.env.ALPACA_ENDPOINT ?? "https://paper-api.alpaca.markets/v2";
+const DATA_ENDPOINT = "https://data.alpaca.markets/v2";
 
 function headers(): Record<string, string> {
   return {
@@ -71,6 +72,52 @@ const HISTORY_PARAMS: Record<string, { period?: string; timeframe: string }> = {
   "1Y":  { period: "1A", timeframe: "1D" },
   "MAX": {               timeframe: "1D" },
 };
+
+export type HistoricalChanges = {
+  prevClose: number | null;
+  weekChange: number | null;
+  monthChange: number | null;
+  ytdChange: number | null;
+};
+
+export async function getMultiBarChanges(
+  symbols: string[]
+): Promise<Record<string, HistoricalChanges>> {
+  if (symbols.length === 0) return {};
+  try {
+    const yearStart = `${new Date().getFullYear()}-01-01`;
+    const params = new URLSearchParams({
+      symbols: symbols.join(","),
+      timeframe: "1Day",
+      start: yearStart,
+      limit: "260",
+      feed: "iex",
+      adjustment: "raw",
+    });
+    const res = await fetch(`${DATA_ENDPOINT}/stocks/bars?${params}`, {
+      headers: headers(),
+      cache: "no-store",
+    });
+    if (!res.ok) return {};
+    const data = await res.json();
+    const result: Record<string, HistoricalChanges> = {};
+    for (const [sym, rawBars] of Object.entries(data.bars ?? {})) {
+      const bars = rawBars as { c: number }[];
+      if (bars.length < 2) continue;
+      const last = bars[bars.length - 1].c;
+      const pct = (ref: number) => ((last - ref) / ref) * 100;
+      result[sym] = {
+        prevClose: bars[bars.length - 2].c,
+        weekChange: bars.length >= 6 ? pct(bars[bars.length - 6].c) : null,
+        monthChange: bars.length >= 22 ? pct(bars[bars.length - 22].c) : null,
+        ytdChange: pct(bars[0].c),
+      };
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
 
 export async function getPortfolioHistory(range: string): Promise<{
   points: PortfolioPoint[];

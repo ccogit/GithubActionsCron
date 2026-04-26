@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, Fragment } from "react";
-import { Trash2, Check, X, TrendingUp, TrendingDown, ArrowDownToLine, ShoppingCart, ChevronDown } from "lucide-react";
+import { Trash2, Check, X, ArrowDownToLine, ShoppingCart, ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { removeSymbol, updateMinPrice } from "@/app/actions";
 import { closePositionAction, placeOrderAction } from "@/app/alpaca-actions";
@@ -14,6 +14,13 @@ export type Holding = {
   symbol: string;
   watch: WatchlistRow | null;
   position: AlpacaPosition | null;
+};
+
+export type PeriodChanges = {
+  day: number | null;
+  week: number | null;
+  month: number | null;
+  ytd: number | null;
 };
 
 export type SymbolSignals = {
@@ -34,7 +41,7 @@ export type SymbolSignals = {
 type Props = {
   holdings: Holding[];
   latestPrices: Record<string, number>;
-  changes: Record<string, number | null>;
+  periodChanges: Record<string, PeriodChanges>;
   colors: string[];
   ticksBySymbol: Record<string, PriceTick[]>;
   signals?: Record<string, SymbolSignals>;
@@ -70,7 +77,7 @@ function OverallSignalBadge({ s }: { s?: SymbolSignals }) {
   );
 }
 
-export function StocksTable({ holdings, latestPrices, changes, colors, ticksBySymbol, signals }: Props) {
+export function StocksTable({ holdings, latestPrices, periodChanges, colors, ticksBySymbol, signals }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
@@ -128,7 +135,7 @@ export function StocksTable({ holdings, latestPrices, changes, colors, ticksBySy
           <tr className="border-b border-white/6">
             <th className="text-left py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Symbol</th>
             <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Price</th>
-            <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">2h Chg</th>
+            <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Change</th>
             <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Holding</th>
             <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">P&amp;L</th>
             <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Signals</th>
@@ -149,7 +156,7 @@ export function StocksTable({ holdings, latestPrices, changes, colors, ticksBySy
             const tickPrice = latestPrices[h.symbol];
             const fallbackPrice = h.position ? parseFloat(h.position.current_price) : undefined;
             const price = tickPrice ?? fallbackPrice;
-            const change = changes[h.symbol];
+            const periods = periodChanges[h.symbol] ?? { day: null, week: null, month: null, ytd: null };
 
             const isWatch = h.watch !== null;
             const isOwned = h.position !== null;
@@ -204,20 +211,22 @@ export function StocksTable({ holdings, latestPrices, changes, colors, ticksBySy
                   {price !== undefined ? `$${price.toFixed(2)}` : "—"}
                 </td>
 
-                {/* 2h chg */}
+                {/* Period changes */}
                 <td className="py-3 px-3 text-right">
-                  {change !== null && change !== undefined ? (
-                    <span
-                      className={`inline-flex items-center gap-1 font-mono text-xs font-medium ${
-                        change >= 0 ? "text-emerald-400" : "text-red-400"
-                      }`}
-                    >
-                      {change >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
-                      {change >= 0 ? "+" : ""}{change.toFixed(2)}%
-                    </span>
-                  ) : (
-                    <span className="text-muted-foreground font-mono text-xs">—</span>
-                  )}
+                  <div className="flex flex-col items-end gap-0.5">
+                    {([ ["1D", periods.day], ["1W", periods.week], ["1M", periods.month], ["YTD", periods.ytd] ] as [string, number | null][]).map(([label, val]) => (
+                      <div key={label} className="flex items-center gap-1.5 leading-none">
+                        <span className="text-[9px] font-mono uppercase text-muted-foreground/50 w-6 text-right">{label}</span>
+                        {val !== null ? (
+                          <span className={`font-mono text-[11px] font-medium tabular-nums ${val >= 0 ? "text-emerald-400" : "text-red-400"}`}>
+                            {val >= 0 ? "+" : ""}{val.toFixed(2)}%
+                          </span>
+                        ) : (
+                          <span className="font-mono text-[11px] text-muted-foreground/30">—</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </td>
 
                 {/* Holding (qty + avg entry) */}
