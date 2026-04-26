@@ -1,13 +1,15 @@
 """Refresh composite technical indicator signals using yfinance price history.
 
-Computes three indicators from daily OHLCV data and combines them into a
+Computes five indicators from daily OHLCV data and combines them into a
 single buy/neutral/sell verdict:
 
   1. RSI(14)       — oversold (<40) = bullish, overbought (>60) = bearish
   2. SMA crossover — price > SMA50 > SMA200 = bullish; inverted = bearish
   3. MACD histogram — positive = bullish, negative = bearish
+  4. Bollinger Bands — price outside bands (±2σ) = overbought/oversold
+  5. OBV trend — On-Balance Volume trend vs 14-day MA
 
-Signal: 2 of 3 indicators agree → buy or sell; otherwise neutral.
+Signal: 3 of 5 indicators agree → buy or sell; otherwise neutral.
 
 Runs daily on weekdays after market close. No API key required.
 """
@@ -44,6 +46,40 @@ def _macd_histogram(close: pd.Series) -> float:
     return float((macd - signal).iloc[-1])
 
 
+def _bollinger_bands(close: pd.Series, period: int = 20) -> str:
+    """Bollinger Bands: Price beyond ±2σ bands indicates overbought/oversold."""
+    sma = close.rolling(period).mean()
+    std = close.rolling(period).std()
+    upper = sma + (2 * std)
+    lower = sma - (2 * std)
+    current = float(close.iloc[-1])
+    upper_val = float(upper.iloc[-1])
+    lower_val = float(lower.iloc[-1])
+
+    if current > upper_val:
+        return "sell"
+    elif current < lower_val:
+        return "buy"
+    else:
+        return "neutral"
+
+
+def _obv_trend(close: pd.Series, volume: pd.Series) -> str:
+    """On-Balance Volume: Rising OBV with rising price confirms uptrend."""
+    price_change = close.diff()
+    obv = (volume * price_change.apply(lambda x: 1 if x > 0 else -1 if x < 0 else 0)).fillna(0).cumsum()
+    obv_sma = obv.rolling(14).mean()
+    obv_current = float(obv.iloc[-1])
+    obv_sma_current = float(obv_sma.iloc[-1])
+
+    if obv_current > obv_sma_current:
+        return "buy"
+    elif obv_current < obv_sma_current:
+        return "sell"
+    else:
+        return "neutral"
+
+
 def get_technical_signal(symbol: str) -> Optional[dict]:
     try:
         hist = yf.Ticker(symbol).history(period="1y")
@@ -51,6 +87,7 @@ def get_technical_signal(symbol: str) -> Optional[dict]:
             return None
 
         close = hist["Close"]
+        volume = hist["Volume"]
         current = float(close.iloc[-1])
 
         # 1. RSI
@@ -74,14 +111,20 @@ def get_technical_signal(symbol: str) -> Optional[dict]:
         macd_hist = _macd_histogram(close)
         macd_sig = "buy" if macd_hist > 0 else "sell"
 
-        signals = [rsi_sig, sma_sig, macd_sig]
+        # 4. Bollinger Bands
+        bb_sig = _bollinger_bands(close)
+
+        # 5. OBV trend
+        obv_sig = _obv_trend(close, volume)
+
+        signals = [rsi_sig, sma_sig, macd_sig, bb_sig, obv_sig]
         buy_count = signals.count("buy")
         sell_count = signals.count("sell")
         neutral_count = signals.count("neutral")
 
-        if buy_count >= 2:
+        if buy_count >= 3:
             signal = "buy"
-        elif sell_count >= 2:
+        elif sell_count >= 3:
             signal = "sell"
         else:
             signal = "neutral"

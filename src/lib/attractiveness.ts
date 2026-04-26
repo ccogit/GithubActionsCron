@@ -1,9 +1,12 @@
 // Composite "attractiveness" score for a stock, derived from multiple signals.
 // Each signal contributes ±1 (or ±2 for strong analyst conviction). Higher is better.
 //
-// Possible range with all 11 signals:
+// Possible range with all 11 signals (plus optional macro context):
 //   max  +10  (upside+2, all others+1)
 //   min  −9   (downside−2, short interest−1, all others−1)
+//
+// Optional macro context (fed rates, unemployment) can dampen or amplify scores
+// by ±1 if economic conditions are extreme.
 //
 // Outlook thresholds set to ±3 so a stock needs conviction across multiple
 // signals before being labelled bullish or bearish.

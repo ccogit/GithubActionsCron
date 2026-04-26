@@ -11,14 +11,15 @@ const GITHUB_BRANCH = process.env.GITHUB_BRANCH ?? "main";
 const WORKFLOW_GROUPS: Array<{ workflow: string; name: string }[]> = [
   [{ workflow: "refresh-index-constituents.yml", name: "Index Constituents" }],
   [
-    { workflow: "refresh-analyst-cache.yml",      name: "Analyst Cache" },
-    { workflow: "refresh-politician-trades.yml",  name: "Politician Trades" },
-    { workflow: "refresh-analyst-ratings.yml",    name: "Analyst Ratings" },
-    { workflow: "refresh-technical-signals.yml",  name: "Technical Signals" },
-    { workflow: "refresh-short-interest.yml",     name: "Short Interest" },
-    { workflow: "refresh-insider-signals.yml",    name: "Insider Signals" },
-    { workflow: "refresh-earnings-signals.yml",   name: "Earnings Signals" },
-    { workflow: "refresh-social-sentiment.yml",   name: "Social Sentiment" },
+    { workflow: "refresh-analyst-cache.yml",           name: "Analyst Cache" },
+    { workflow: "refresh-politician-trades.yml",       name: "Politician Trades" },
+    { workflow: "refresh-analyst-ratings.yml",         name: "Analyst Ratings" },
+    { workflow: "refresh-technical-signals.yml",       name: "Technical Signals" },
+    { workflow: "refresh-short-interest.yml",          name: "Short Interest" },
+    { workflow: "refresh-insider-signals.yml",         name: "Insider Signals" },
+    { workflow: "refresh-earnings-signals.yml",        name: "Earnings Signals" },
+    { workflow: "refresh-social-sentiment.yml",        name: "Social Sentiment" },
+    { workflow: "refresh-economic-indicators.yml",     name: "Economic Indicators" },
   ],
   [{ workflow: "enrich-politician-signals.yml", name: "Enrich Signals" }],
 ];
