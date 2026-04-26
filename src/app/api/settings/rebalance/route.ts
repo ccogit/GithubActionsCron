@@ -28,6 +28,6 @@ export async function POST(request: NextRequest) {
   await db.from("settings").upsert(
     { key: KEY, value: String(!!enabled), updated_at: new Date().toISOString() },
     { onConflict: "key" }
-  ).execute();
+  );
   return NextResponse.json({ enabled: !!enabled });
 }
