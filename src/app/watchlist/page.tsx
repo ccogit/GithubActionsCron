@@ -5,6 +5,7 @@ import { CollapsibleSection } from "@/components/CollapsibleSection";
 import { AddStockForms } from "@/components/AddStockForms";
 import { MarketTabs } from "@/components/MarketTabs";
 import { RebalanceView } from "@/components/RebalanceView";
+import { RefreshSignalsButton } from "@/components/RefreshSignalsButton";
 import type { WatchlistRow, PriceTick, AlertLogRow } from "@/lib/types";
 import type { Holding, SymbolSignals } from "@/components/StocksTable";
 
@@ -105,6 +106,8 @@ export default async function StocksPage() {
   return (
     <div className="min-h-screen">
       <main className="max-w-6xl mx-auto px-4 sm:px-6 py-8 space-y-8">
+        <RefreshSignalsButton />
+
         {/* MY PORTFOLIO */}
         <CollapsibleSection
           title="My Portfolio"
