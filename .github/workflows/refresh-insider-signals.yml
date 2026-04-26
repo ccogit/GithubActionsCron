@@ -1,0 +1,32 @@
+name: Refresh Insider Signals
+
+# Fetches corporate insider open-market transactions from yfinance (SEC Form 4).
+# Aggregates officer/director purchases and sales over the trailing 90 days.
+# Form 4 filings must be submitted within 2 business days of transaction.
+#
+# Required secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE
+
+on:
+  schedule:
+    - cron: '0 9 * * 1-5'   # Weekdays 09:00 UTC
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: pip install yfinance pandas "supabase>=2.15.0"
+
+      - name: Refresh insider signals
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: python worker/refresh_insider_signals.py

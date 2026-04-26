@@ -5,14 +5,19 @@ const GITHUB_REPO = process.env.GITHUB_REPO ?? "";
 const GITHUB_BRANCH = process.env.GITHUB_BRANCH ?? "main";
 
 // Ordered groups: each group fires in parallel; groups fire sequentially.
-//   Group 0 — index_constituents (symbol universe; prerequisite for all signal fetchers)
-//   Group 1 — analyst-cache + politician-trades (independent of each other)
+//   Group 0 — index_constituents (symbol universe; all signal fetchers read it)
+//   Group 1 — all signal fetchers (independent of each other)
 //   Group 2 — enrich-politician-signals (reads politician_trade_summary rows)
 const WORKFLOW_GROUPS: Array<{ workflow: string; name: string }[]> = [
   [{ workflow: "refresh-index-constituents.yml", name: "Index Constituents" }],
   [
-    { workflow: "refresh-analyst-cache.yml", name: "Analyst Cache" },
-    { workflow: "refresh-politician-trades.yml", name: "Politician Trades" },
+    { workflow: "refresh-analyst-cache.yml",      name: "Analyst Cache" },
+    { workflow: "refresh-politician-trades.yml",  name: "Politician Trades" },
+    { workflow: "refresh-analyst-ratings.yml",    name: "Analyst Ratings" },
+    { workflow: "refresh-technical-signals.yml",  name: "Technical Signals" },
+    { workflow: "refresh-short-interest.yml",     name: "Short Interest" },
+    { workflow: "refresh-insider-signals.yml",    name: "Insider Signals" },
+    { workflow: "refresh-earnings-signals.yml",   name: "Earnings Signals" },
   ],
   [{ workflow: "enrich-politician-signals.yml", name: "Enrich Signals" }],
 ];

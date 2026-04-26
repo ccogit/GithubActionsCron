@@ -1,0 +1,32 @@
+name: Refresh Analyst Ratings
+
+# Fetches Finnhub recommendation-trend consensus (strongBuy/buy/hold/sell/strongSell)
+# for all active US index constituents. Runs weekly; ratings move slowly.
+#
+# Required secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE, FINNHUB_API_KEY
+
+on:
+  schedule:
+    - cron: '0 6 * * 0'   # Sunday 06:00 UTC
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: pip install requests "supabase>=2.15.0"
+
+      - name: Refresh analyst ratings
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+        run: python worker/refresh_analyst_ratings.py

@@ -45,6 +45,11 @@ type PoliticianRow = {
   news_sentiment: number | null;
   trends_direction: string | null;
 };
+type RatingRow   = { symbol: string; consensus_score: number | null };
+type TechRow     = { symbol: string; signal: string | null };
+type ShortRow    = { symbol: string; short_pct_float: number | null };
+type InsiderRow  = { symbol: string; signal: string | null };
+type EarningsRow = { symbol: string; beat_rate: number | null };
 
 interface PlanBundle {
   plan: RebalancePlan;
@@ -59,17 +64,18 @@ interface PlanBundle {
 async function buildPlan(config: RebalanceConfig): Promise<PlanBundle> {
   const db = createClient();
 
-  const [positions, constituentsRes, analystRes, politicianRes] = await Promise.all([
-    getPositions(),
-    db
-      .from("index_constituents")
-      .select("symbol, name, exchange, exchange_type")
-      .eq("active", true),
-    db.from("analyst_cache").select("symbol, upside_pct"),
-    db
-      .from("politician_trade_summary")
-      .select("symbol, buy_count, sell_count, news_sentiment, trends_direction"),
-  ]);
+  const [positions, constituentsRes, analystRes, politicianRes, ratingsRes, techRes, shortRes, insiderRes, earningsRes] =
+    await Promise.all([
+      getPositions(),
+      db.from("index_constituents").select("symbol, name, exchange, exchange_type").eq("active", true),
+      db.from("analyst_cache").select("symbol, upside_pct"),
+      db.from("politician_trade_summary").select("symbol, buy_count, sell_count, news_sentiment, trends_direction"),
+      db.from("analyst_ratings").select("symbol, consensus_score"),
+      db.from("technical_signals").select("symbol, signal"),
+      db.from("short_interest_cache").select("symbol, short_pct_float"),
+      db.from("insider_signals").select("symbol, signal"),
+      db.from("earnings_signals").select("symbol, beat_rate"),
+    ]);
 
   // Universe restricted to US-tradable (Alpaca paper); group by exchange for quote fetch
   const constituents = (constituentsRes.data ?? []) as Constituent[];
@@ -85,11 +91,14 @@ async function buildPlan(config: RebalanceConfig): Promise<PlanBundle> {
   );
   const quotes: QuoteRow[] = quoteResults.flat();
 
-  const analystMap = new Map((analystRes.data ?? []).map((r: AnalystRow) => [r.symbol, r]));
-  const politicianMap = new Map(
-    (politicianRes.data ?? []).map((r: PoliticianRow) => [r.symbol, r])
-  );
-  const quoteMap = new Map(quotes.map((q) => [q.symbol, q]));
+  const analystMap    = new Map((analystRes.data ?? []).map((r: AnalystRow) => [r.symbol, r]));
+  const politicianMap = new Map((politicianRes.data ?? []).map((r: PoliticianRow) => [r.symbol, r]));
+  const ratingsMap    = new Map((ratingsRes.data ?? []).map((r: RatingRow) => [r.symbol, r.consensus_score]));
+  const techMap       = new Map((techRes.data ?? []).map((r: TechRow) => [r.symbol, r.signal]));
+  const shortMap      = new Map((shortRes.data ?? []).map((r: ShortRow) => [r.symbol, r.short_pct_float]));
+  const insiderMap    = new Map((insiderRes.data ?? []).map((r: InsiderRow) => [r.symbol, r.signal]));
+  const earningsMap   = new Map((earningsRes.data ?? []).map((r: EarningsRow) => [r.symbol, r.beat_rate]));
+  const quoteMap      = new Map(quotes.map((q) => [q.symbol, q]));
 
   // Score every symbol we know about (held + universe)
   const allSymbols = new Set<string>();
@@ -108,6 +117,11 @@ async function buildPlan(config: RebalanceConfig): Promise<PlanBundle> {
       news_sentiment: p?.news_sentiment ?? null,
       trends_direction: p?.trends_direction ?? null,
       changePct: q?.changePct ?? null,
+      consensus_score: ratingsMap.get(sym) ?? null,
+      tech_signal: techMap.get(sym) ?? null,
+      short_pct_float: shortMap.get(sym) ?? null,
+      insider_signal: insiderMap.get(sym) ?? null,
+      eps_beat_rate: earningsMap.get(sym) ?? null,
     });
     scoreMap.set(sym, r.score);
   }

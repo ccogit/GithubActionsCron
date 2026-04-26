@@ -1,0 +1,31 @@
+name: Refresh Short Interest
+
+# Fetches short interest as % of float from yfinance (sourced from FINRA).
+# FINRA publishes biweekly; weekly refresh captures both settlement windows.
+#
+# Required secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE
+
+on:
+  schedule:
+    - cron: '0 7 * * 0'   # Sunday 07:00 UTC
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: pip install yfinance "supabase>=2.15.0"
+
+      - name: Refresh short interest
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: python worker/refresh_short_interest.py

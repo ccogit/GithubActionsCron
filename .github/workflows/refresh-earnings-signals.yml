@@ -1,0 +1,32 @@
+name: Refresh Earnings Signals
+
+# Fetches EPS actual vs estimate from yfinance and computes a beat-rate
+# (fraction of last 4 quarters where the company beat consensus).
+# Runs weekly on Sundays; data refreshes when quarterly results land.
+#
+# Required secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE
+
+on:
+  schedule:
+    - cron: '0 8 * * 0'   # Sunday 08:00 UTC
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: pip install yfinance "supabase>=2.15.0"
+
+      - name: Refresh earnings signals
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: python worker/refresh_earnings_signals.py

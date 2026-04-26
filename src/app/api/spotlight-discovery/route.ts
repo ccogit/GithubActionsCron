@@ -30,29 +30,27 @@ interface DiscoveryStock {
   news_sentiment: number | null;
   trends_direction: string | null;
 
+  // new signals
+  consensus_score: number | null;
+  tech_signal: string | null;
+  short_pct_float: number | null;
+  insider_signal: string | null;
+  eps_beat_rate: number | null;
+
   score: number;
   signalCount: number;
   outlook: "bullish" | "bearish" | "mixed";
   reasons: string[];
 }
 
-type AnalystRow = {
-  symbol: string;
-  target_mean: number | null;
-  current_price: number | null;
-  upside_pct: number | null;
-  n_analysts: number | null;
-};
-
-type PoliticianRow = {
-  symbol: string;
-  buy_count: number | null;
-  sell_count: number | null;
-  news_sentiment: number | null;
-  trends_direction: string | null;
-};
-
 type Constituent = { symbol: string; name: string; exchange: string; exchange_type: string };
+type AnalystRow = { symbol: string; target_mean: number | null; current_price: number | null; upside_pct: number | null; n_analysts: number | null };
+type PoliticianRow = { symbol: string; buy_count: number | null; sell_count: number | null; news_sentiment: number | null; trends_direction: string | null };
+type RatingRow = { symbol: string; consensus_score: number | null };
+type TechRow = { symbol: string; signal: string | null };
+type ShortRow = { symbol: string; short_pct_float: number | null };
+type InsiderRow = { symbol: string; signal: string | null };
+type EarningsRow = { symbol: string; beat_rate: number | null };
 
 function computeScore(stock: DiscoveryStock): void {
   const r = computeAttractiveness({
@@ -62,6 +60,11 @@ function computeScore(stock: DiscoveryStock): void {
     news_sentiment: stock.news_sentiment,
     trends_direction: stock.trends_direction,
     changePct: stock.changePct,
+    consensus_score: stock.consensus_score,
+    tech_signal: stock.tech_signal,
+    short_pct_float: stock.short_pct_float,
+    insider_signal: stock.insider_signal,
+    eps_beat_rate: stock.eps_beat_rate,
   });
   stock.score = r.score;
   stock.signalCount = r.signalCount;
@@ -73,30 +76,25 @@ export async function GET() {
   try {
     const db = createClient();
 
-    // Step 1: fetch constituents, analyst data, and politician signals in parallel
-    const [constituentsRes, analystRes, politicianRes] = await Promise.all([
-      db
-        .from("index_constituents")
-        .select("symbol, name, exchange, exchange_type")
-        .eq("active", true),
-      db
-        .from("analyst_cache")
-        .select("symbol, target_mean, current_price, upside_pct, n_analysts")
-        .not("upside_pct", "is", null),
-      db
-        .from("politician_trade_summary")
-        .select("symbol, buy_count, sell_count, news_sentiment, trends_direction"),
-    ]);
+    const [constituentsRes, analystRes, politicianRes, ratingsRes, techRes, shortRes, insiderRes, earningsRes] =
+      await Promise.all([
+        db.from("index_constituents").select("symbol, name, exchange, exchange_type").eq("active", true),
+        db.from("analyst_cache").select("symbol, target_mean, current_price, upside_pct, n_analysts").not("upside_pct", "is", null),
+        db.from("politician_trade_summary").select("symbol, buy_count, sell_count, news_sentiment, trends_direction"),
+        db.from("analyst_ratings").select("symbol, consensus_score"),
+        db.from("technical_signals").select("symbol, signal"),
+        db.from("short_interest_cache").select("symbol, short_pct_float"),
+        db.from("insider_signals").select("symbol, signal"),
+        db.from("earnings_signals").select("symbol, beat_rate"),
+      ]);
 
     const allConstituents = (constituentsRes.data ?? []) as Constituent[];
     const byExchange = new Map<Exchange, Constituent[]>();
     for (const c of allConstituents) {
-      if (!byExchange.has(c.exchange as Exchange))
-        byExchange.set(c.exchange as Exchange, []);
+      if (!byExchange.has(c.exchange as Exchange)) byExchange.set(c.exchange as Exchange, []);
       byExchange.get(c.exchange as Exchange)!.push(c);
     }
 
-    // Step 2: fetch live quotes for all exchanges in parallel
     const quoteResults = await Promise.all(
       EXCHANGES.map((ex) =>
         fetchQuotesForExchange(byExchange.get(ex) ?? [], EXCHANGE_TYPE[ex]).then(
@@ -110,8 +108,11 @@ export async function GET() {
       for (const q of quotes) quoteMap.set(q.symbol, { quote: q, exchange });
     }
 
-    const analystRows = (analystRes.data ?? []) as AnalystRow[];
-    const politicianRows = (politicianRes.data ?? []) as PoliticianRow[];
+    const ratingsMap = new Map((ratingsRes.data ?? []).map((r: RatingRow) => [r.symbol, r.consensus_score]));
+    const techMap = new Map((techRes.data ?? []).map((r: TechRow) => [r.symbol, r.signal]));
+    const shortMap = new Map((shortRes.data ?? []).map((r: ShortRow) => [r.symbol, r.short_pct_float]));
+    const insiderMap = new Map((insiderRes.data ?? []).map((r: InsiderRow) => [r.symbol, r.signal]));
+    const earningsMap = new Map((earningsRes.data ?? []).map((r: EarningsRow) => [r.symbol, r.beat_rate]));
 
     const stockMap = new Map<string, DiscoveryStock>();
 
@@ -132,6 +133,11 @@ export async function GET() {
           sell_count: 0,
           news_sentiment: null,
           trends_direction: null,
+          consensus_score: ratingsMap.get(symbol) ?? null,
+          tech_signal: techMap.get(symbol) ?? null,
+          short_pct_float: shortMap.get(symbol) ?? null,
+          insider_signal: insiderMap.get(symbol) ?? null,
+          eps_beat_rate: earningsMap.get(symbol) ?? null,
           score: 0,
           signalCount: 0,
           outlook: "mixed",
@@ -142,7 +148,7 @@ export async function GET() {
       return s;
     };
 
-    for (const row of analystRows) {
+    for (const row of (analystRes.data ?? []) as AnalystRow[]) {
       const s = ensure(row.symbol);
       s.upside_pct = row.upside_pct;
       s.current_price = row.current_price;
@@ -150,7 +156,7 @@ export async function GET() {
       s.n_analysts = row.n_analysts;
     }
 
-    for (const row of politicianRows) {
+    for (const row of (politicianRes.data ?? []) as PoliticianRow[]) {
       const s = ensure(row.symbol);
       s.buy_count = row.buy_count ?? 0;
       s.sell_count = row.sell_count ?? 0;
