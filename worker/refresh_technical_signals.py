@@ -1,37 +1,97 @@
-"""Refresh Finnhub aggregate technical indicator signals.
+"""Refresh composite technical indicator signals using yfinance price history.
 
-Calls /scan/technical-indicator (free tier) which combines RSI, MACD, STOCH,
-SMA, EMA, Bollinger Bands, and Williams %R into a single buy/neutral/sell
-verdict for each symbol. Also captures ADX (trend strength).
+Computes three indicators from daily OHLCV data and combines them into a
+single buy/neutral/sell verdict:
 
-Runs daily on weekdays after US markets close.
+  1. RSI(14)       — oversold (<40) = bullish, overbought (>60) = bearish
+  2. SMA crossover — price > SMA50 > SMA200 = bullish; inverted = bearish
+  3. MACD histogram — positive = bullish, negative = bearish
+
+Signal: 2 of 3 indicators agree → buy or sell; otherwise neutral.
+
+Runs daily on weekdays after market close. No API key required.
 """
 
 import os
 import sys
 import time
 from datetime import datetime, timezone
+from typing import Optional
 
-import requests
+import pandas as pd
+import yfinance as yf
 from supabase import create_client
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_ROLE = os.environ["SUPABASE_SERVICE_ROLE"]
-FINNHUB_TOKEN = os.environ["FINNHUB_API_KEY"]
-
-BASE = "https://finnhub.io/api/v1"
-DELAY = 1.2  # 60 req/min free-tier limit
 
 
-def fetch_technical(symbol: str) -> dict | None:
+def _rsi(close: pd.Series, period: int = 14) -> float:
+    delta = close.diff()
+    gain = delta.clip(lower=0)
+    loss = (-delta).clip(lower=0)
+    avg_gain = gain.ewm(com=period - 1, min_periods=period).mean()
+    avg_loss = loss.ewm(com=period - 1, min_periods=period).mean()
+    rs = avg_gain / avg_loss
+    return float(100 - 100 / (1 + rs.iloc[-1]))
+
+
+def _macd_histogram(close: pd.Series) -> float:
+    ema12 = close.ewm(span=12, adjust=False).mean()
+    ema26 = close.ewm(span=26, adjust=False).mean()
+    macd = ema12 - ema26
+    signal = macd.ewm(span=9, adjust=False).mean()
+    return float((macd - signal).iloc[-1])
+
+
+def get_technical_signal(symbol: str) -> Optional[dict]:
     try:
-        r = requests.get(
-            f"{BASE}/scan/technical-indicator",
-            params={"symbol": symbol, "resolution": "D", "token": FINNHUB_TOKEN},
-            timeout=15,
-        )
-        r.raise_for_status()
-        return r.json()
+        hist = yf.Ticker(symbol).history(period="1y")
+        if hist.empty or len(hist) < 50:
+            return None
+
+        close = hist["Close"]
+        current = float(close.iloc[-1])
+
+        # 1. RSI
+        rsi = _rsi(close)
+        rsi_sig = "buy" if rsi < 40 else "sell" if rsi > 60 else "neutral"
+
+        # 2. SMA crossover
+        sma50 = float(close.rolling(50).mean().iloc[-1])
+        if len(close) >= 200:
+            sma200 = float(close.rolling(200).mean().iloc[-1])
+            if current > sma50 and sma50 > sma200:
+                sma_sig = "buy"
+            elif current < sma50 and sma50 < sma200:
+                sma_sig = "sell"
+            else:
+                sma_sig = "neutral"
+        else:
+            sma_sig = "buy" if current > sma50 else "sell"
+
+        # 3. MACD histogram
+        macd_hist = _macd_histogram(close)
+        macd_sig = "buy" if macd_hist > 0 else "sell"
+
+        signals = [rsi_sig, sma_sig, macd_sig]
+        buy_count = signals.count("buy")
+        sell_count = signals.count("sell")
+        neutral_count = signals.count("neutral")
+
+        if buy_count >= 2:
+            signal = "buy"
+        elif sell_count >= 2:
+            signal = "sell"
+        else:
+            signal = "neutral"
+
+        return {
+            "signal": signal,
+            "buy_count": buy_count,
+            "neutral_count": neutral_count,
+            "sell_count": sell_count,
+        }
     except Exception as e:
         print(f"  {symbol}: {e}", file=sys.stderr)
         return None
@@ -47,46 +107,26 @@ def main() -> int:
         .eq("exchange_type", "us")
         .execute()
     )
-    symbols = [r["symbol"] for r in (res.data or [])]
-    print(f"Fetching technical signals for {len(symbols)} US symbols...")
+    symbols = list(dict.fromkeys(r["symbol"] for r in (res.data or [])))
+    print(f"Computing technical signals for {len(symbols)} US symbols...")
 
     now = datetime.now(timezone.utc).isoformat()
     batch: list[dict] = []
     ok = skipped = 0
 
     for i, symbol in enumerate(symbols):
-        data = fetch_technical(symbol)
-        time.sleep(DELAY)
+        data = get_technical_signal(symbol)
+        time.sleep(0.3)
 
-        if not data:
+        if data is None:
             skipped += 1
             continue
 
-        ta = data.get("technicalAnalysis") or {}
-        trend = data.get("trend") or {}
-        count = ta.get("count") or {}
-        signal = ta.get("signal")
-
-        if not signal:
-            skipped += 1
-            continue
-
-        batch.append(
-            {
-                "symbol": symbol,
-                "signal": signal,
-                "buy_count": count.get("buy", 0),
-                "neutral_count": count.get("neutral", 0),
-                "sell_count": count.get("sell", 0),
-                "adx": trend.get("adx"),
-                "trending": trend.get("trending"),
-                "updated_at": now,
-            }
-        )
+        batch.append({"symbol": symbol, **data, "updated_at": now})
         ok += 1
 
         if i % 20 == 0:
-            print(f"  [{i + 1}/{len(symbols)}] {symbol}: {signal}")
+            print(f"  [{i + 1}/{len(symbols)}] {symbol}: {data['signal']}")
 
         if len(batch) >= 50:
             db.table("technical_signals").upsert(batch, on_conflict="symbol").execute()

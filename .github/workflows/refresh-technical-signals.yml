@@ -1,10 +1,10 @@
 name: Refresh Technical Signals
 
-# Fetches Finnhub aggregate technical-indicator signal (buy/neutral/sell)
-# combining RSI, MACD, STOCH, SMA, EMA, Bollinger Bands, Williams %R.
-# Runs daily on weekdays after US markets close in Europe.
+# Computes RSI(14), SMA50/200 crossover, and MACD histogram from yfinance
+# price history and combines them into a buy/neutral/sell verdict per symbol.
+# Runs daily on weekdays after US markets close. No API key required.
 #
-# Required secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE, FINNHUB_API_KEY
+# Required secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE
 
 on:
   schedule:
@@ -23,11 +23,10 @@ jobs:
           python-version: '3.13'
 
       - name: Install dependencies
-        run: pip install requests "supabase>=2.15.0"
+        run: pip install yfinance numpy pandas "supabase>=2.15.0"
 
       - name: Refresh technical signals
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
         run: python worker/refresh_technical_signals.py

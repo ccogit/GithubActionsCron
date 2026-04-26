@@ -108,7 +108,7 @@ def main() -> int:
         .eq("exchange_type", "us")
         .execute()
     )
-    symbols = [r["symbol"] for r in (res.data or [])]
+    symbols = list(dict.fromkeys(r["symbol"] for r in (res.data or [])))
     print(f"Fetching insider transactions for {len(symbols)} US symbols...")
 
     now = datetime.now(timezone.utc).isoformat()
