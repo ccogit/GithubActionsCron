@@ -10,6 +10,8 @@ Stores aggregated unusual volume and call/put ratio per symbol.
 import os
 import sys
 import time
+import math
+import pandas as pd
 import yfinance as yf
 from datetime import datetime, timezone
 from typing import Optional
@@ -77,8 +79,13 @@ def get_options_flow(symbol: str) -> Optional[dict]:
 
             for opt_type, df in [("call", chain.calls), ("put", chain.puts)]:
                 for _, row in df.iterrows():
-                    vol = int(row.get("volume", 0) or 0)
-                    oi = int(row.get("openInterest", 0) or 0)
+                    # Handle NaN values which cause int() to fail
+                    raw_vol = row.get("volume", 0)
+                    raw_oi = row.get("openInterest", 0)
+                    
+                    vol = int(raw_vol) if not pd.isna(raw_vol) else 0
+                    oi = int(raw_oi) if not pd.isna(raw_oi) else 0
+
                     if oi <= 0 or vol <= 0:
                         continue
                     total_contracts_checked += 1

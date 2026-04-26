@@ -55,11 +55,23 @@ def get_analyst_target(symbol: str) -> Optional[dict]:
         current = info.get("currentPrice") or info.get("regularMarketPrice")
 
         if target and n_analysts:
-            return {
-                "target": float(target),
-                "n_analysts": int(n_analysts),
-                "current_price": float(current) if current else None,
-            }
+            # Handle potential NaN/None values from yfinance
+            try:
+                target_f = float(target)
+                n_analysts_i = int(n_analysts)
+                current_f = float(current) if current else None
+                
+                # Check for NaN specifically
+                if target_f != target_f or n_analysts_i != n_analysts_i:
+                    return None
+                    
+                return {
+                    "target": target_f,
+                    "n_analysts": n_analysts_i,
+                    "current_price": current_f,
+                }
+            except (ValueError, TypeError):
+                return None
     except Exception as e:
         print(f"  yfinance error for {symbol}: {e}", file=sys.stderr)
 
