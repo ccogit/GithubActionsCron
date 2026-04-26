@@ -1,0 +1,22 @@
+name: Refresh Options Flow
+
+on:
+  schedule:
+    - cron: '0 22 * * 1-5'   # 22:00 UTC Mon-Fri (after market close)
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install yfinance supabase
+      - name: Refresh options flow
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: python worker/refresh_options_flow.py
