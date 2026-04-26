@@ -9,6 +9,7 @@ import pandas as pd
 import requests
 import sys
 from datetime import datetime, timezone
+from io import StringIO
 
 from supabase import create_client
 
@@ -60,8 +61,9 @@ def fetch_constituents(source: dict) -> list[dict]:
     resp = requests.get(url, headers=HEADERS, timeout=30)
     resp.raise_for_status()
 
-    # pd.read_html(match=) returns only tables whose text contains the pattern
-    tables = pd.read_html(resp.text, match=symbol_col)
+    # pandas 2.x requires a file-like object for raw HTML strings — passing
+    # resp.text directly makes pandas try to open it as a file path.
+    tables = pd.read_html(StringIO(resp.text), match=symbol_col)
     if not tables:
         raise ValueError(f"No table matching '{symbol_col}' found at {url}")
 
