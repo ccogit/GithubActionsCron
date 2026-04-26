@@ -1,11 +1,12 @@
 "use client";
 
-import { useState, Fragment, type ReactNode } from "react";
-import { Trash2, Check, X, TrendingUp, TrendingDown, ArrowDownToLine, ShoppingCart, ChevronDown, Newspaper, Landmark, Sparkles } from "lucide-react";
+import { useState, Fragment } from "react";
+import { Trash2, Check, X, TrendingUp, TrendingDown, ArrowDownToLine, ShoppingCart, ChevronDown } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { removeSymbol, updateMinPrice } from "@/app/actions";
 import { closePositionAction, placeOrderAction } from "@/app/alpaca-actions";
 import { StockChartPanel } from "@/components/StockChartPanel";
+import { computeAttractiveness } from "@/lib/attractiveness";
 import type { WatchlistRow, PriceTick } from "@/lib/types";
 import type { AlpacaPosition } from "@/lib/alpaca";
 
@@ -17,10 +18,17 @@ export type Holding = {
 
 export type SymbolSignals = {
   upside_pct?: number | null;
+  buy_count?: number | null;
+  sell_count?: number | null;
   news_sentiment?: number | null;
-  buy_count?: number;
-  sell_count?: number;
   trends_direction?: string | null;
+  changePct?: number | null;
+  consensus_score?: number | null;
+  tech_signal?: string | null;
+  short_pct_float?: number | null;
+  insider_signal?: string | null;
+  eps_beat_rate?: number | null;
+  wsb_sentiment?: string | null;
 };
 
 type Props = {
@@ -32,92 +40,32 @@ type Props = {
   signals?: Record<string, SymbolSignals>;
 };
 
-function SignalPill({
-  icon,
-  children,
-  tone,
-  title,
-}: {
-  icon: ReactNode;
-  children: ReactNode;
-  tone: "green" | "red" | "yellow" | "blue" | "gray";
-  title?: string;
-}) {
-  const tones = {
-    green: "bg-green-500/10 text-green-300",
-    red: "bg-red-500/10 text-red-300",
-    yellow: "bg-yellow-500/10 text-yellow-300",
-    blue: "bg-blue-500/10 text-blue-300",
-    gray: "bg-white/5 text-muted-foreground",
-  };
-  return (
-    <div
-      title={title}
-      className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium ${tones[tone]}`}
-    >
-      <span className="opacity-80">{icon}</span>
-      {children}
-    </div>
-  );
-}
-
-function SignalsCell({ s }: { s?: SymbolSignals }) {
+function OverallSignalBadge({ s }: { s?: SymbolSignals }) {
   if (!s) return <span className="text-muted-foreground font-mono text-xs">—</span>;
 
-  const congressTotal = (s.buy_count ?? 0) + (s.sell_count ?? 0);
-  const hasAny =
-    s.upside_pct != null ||
-    s.news_sentiment != null ||
-    congressTotal > 0 ||
-    (s.trends_direction && s.trends_direction !== "stable");
+  const result = computeAttractiveness(s);
+  if (result.signalCount === 0) return <span className="text-muted-foreground font-mono text-xs">—</span>;
 
-  if (!hasAny) return <span className="text-muted-foreground font-mono text-xs">—</span>;
+  const { score, outlook, signalCount, reasons } = result;
+
+  const styles = {
+    bullish: "bg-green-500/15 text-green-300 border-green-500/30",
+    bearish: "bg-red-500/15 text-red-300 border-red-500/30",
+    mixed:   "bg-white/6 text-muted-foreground border-white/12",
+  };
+
+  const tooltip = [
+    `Score: ${score > 0 ? "+" : ""}${score} (${signalCount} signal${signalCount !== 1 ? "s" : ""} firing)`,
+    ...reasons,
+  ].join("\n");
 
   return (
-    <div className="flex flex-wrap gap-1 justify-end">
-      {s.upside_pct != null && (
-        <SignalPill
-          icon={<Sparkles className="w-2.5 h-2.5" />}
-          tone={s.upside_pct > 5 ? "green" : s.upside_pct < -3 ? "red" : "gray"}
-          title="Analyst upside"
-        >
-          {s.upside_pct > 0 ? "+" : ""}
-          {s.upside_pct.toFixed(0)}%
-        </SignalPill>
-      )}
-      {congressTotal > 0 && (
-        <SignalPill
-          icon={<Landmark className="w-2.5 h-2.5" />}
-          tone={(s.buy_count ?? 0) > (s.sell_count ?? 0) ? "green" : (s.sell_count ?? 0) > (s.buy_count ?? 0) ? "red" : "yellow"}
-          title="Congressional trades (buys / sells)"
-        >
-          {s.buy_count ?? 0}/{s.sell_count ?? 0}
-        </SignalPill>
-      )}
-      {s.news_sentiment != null && (
-        <SignalPill
-          icon={<Newspaper className="w-2.5 h-2.5" />}
-          tone={s.news_sentiment > 0.1 ? "green" : s.news_sentiment < -0.1 ? "red" : "yellow"}
-          title="News sentiment"
-        >
-          {(s.news_sentiment * 100).toFixed(0)}%
-        </SignalPill>
-      )}
-      {s.trends_direction && s.trends_direction !== "stable" && (
-        <SignalPill
-          icon={
-            s.trends_direction === "rising" ? (
-              <TrendingUp className="w-2.5 h-2.5" />
-            ) : (
-              <TrendingDown className="w-2.5 h-2.5" />
-            )
-          }
-          tone={s.trends_direction === "rising" ? "green" : "red"}
-          title="Search interest trend"
-        >
-          {s.trends_direction}
-        </SignalPill>
-      )}
+    <div
+      title={tooltip}
+      className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded border text-[11px] font-semibold font-mono tabular-nums cursor-default ${styles[outlook]}`}
+    >
+      <span>{score > 0 ? "+" : ""}{score}</span>
+      <span className="opacity-50 font-normal text-[9px] uppercase tracking-wider">{outlook}</span>
     </div>
   );
 }
@@ -308,7 +256,7 @@ export function StocksTable({ holdings, latestPrices, changes, colors, ticksBySy
 
                 {/* Signals */}
                 <td className="py-3 px-3 text-right">
-                  <SignalsCell s={signals?.[h.symbol]} />
+                  <OverallSignalBadge s={signals?.[h.symbol]} />
                 </td>
 
                 {/* Alert at (editable when watching) */}

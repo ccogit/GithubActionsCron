@@ -72,36 +72,31 @@ export default async function StocksPage() {
 
   const ownedSymbols = holdings.map((h) => h.symbol);
 
-  // Fetch personalized signals for owned symbols (analyst upside + politician/sentiment data)
+  // Fetch all signals for portfolio symbols to compute the overall attractiveness score
   const signalsBySymbol: Record<string, SymbolSignals> = {};
   if (ownedSymbols.length > 0) {
-    const [analystSignalsRes, politicianSignalsRes] = await Promise.all([
-      db
-        .from("analyst_cache")
-        .select("symbol, upside_pct")
-        .in("symbol", ownedSymbols),
-      db
-        .from("politician_trade_summary")
-        .select("symbol, buy_count, sell_count, news_sentiment, trends_direction")
-        .in("symbol", ownedSymbols),
-    ]);
+    const [analystRes, politicianRes, ratingsRes, techRes, shortRes, insiderRes, earningsRes, socialRes] =
+      await Promise.all([
+        db.from("analyst_cache").select("symbol, upside_pct").in("symbol", ownedSymbols),
+        db.from("politician_trade_summary").select("symbol, buy_count, sell_count, news_sentiment, trends_direction").in("symbol", ownedSymbols),
+        db.from("analyst_ratings").select("symbol, consensus_score").in("symbol", ownedSymbols),
+        db.from("technical_signals").select("symbol, signal").in("symbol", ownedSymbols),
+        db.from("short_interest_cache").select("symbol, short_pct_float").in("symbol", ownedSymbols),
+        db.from("insider_signals").select("symbol, signal").in("symbol", ownedSymbols),
+        db.from("earnings_signals").select("symbol, beat_rate").in("symbol", ownedSymbols),
+        db.from("social_sentiment").select("symbol, wsb_sentiment").in("symbol", ownedSymbols),
+      ]);
 
-    for (const sym of ownedSymbols) signalsBySymbol[sym] = {};
-    for (const row of analystSignalsRes.data ?? []) {
-      signalsBySymbol[row.symbol] = {
-        ...signalsBySymbol[row.symbol],
-        upside_pct: row.upside_pct,
-      };
-    }
-    for (const row of politicianSignalsRes.data ?? []) {
-      signalsBySymbol[row.symbol] = {
-        ...signalsBySymbol[row.symbol],
-        buy_count: row.buy_count ?? 0,
-        sell_count: row.sell_count ?? 0,
-        news_sentiment: row.news_sentiment,
-        trends_direction: row.trends_direction,
-      };
-    }
+    for (const sym of ownedSymbols) signalsBySymbol[sym] = { changePct: changes[sym] ?? null };
+
+    for (const row of analystRes.data ?? [])    signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], upside_pct: row.upside_pct };
+    for (const row of politicianRes.data ?? []) signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], buy_count: row.buy_count, sell_count: row.sell_count, news_sentiment: row.news_sentiment, trends_direction: row.trends_direction };
+    for (const row of ratingsRes.data ?? [])    signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], consensus_score: row.consensus_score };
+    for (const row of techRes.data ?? [])       signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], tech_signal: row.signal };
+    for (const row of shortRes.data ?? [])      signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], short_pct_float: row.short_pct_float };
+    for (const row of insiderRes.data ?? [])    signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], insider_signal: row.signal };
+    for (const row of earningsRes.data ?? [])   signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], eps_beat_rate: row.beat_rate };
+    for (const row of socialRes.data ?? [])     signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], wsb_sentiment: row.wsb_sentiment };
   }
 
   return (
