@@ -1,6 +1,7 @@
 name: Daily Rebalance
 
 # Fires Mon-Fri at 14:00 Europe/Berlin
+# Orchestrates refresh → rebalance sequence without hour validation
 #
 # Triggers all refresh workflows, waits for completion, then executes rebalance.
 #
