@@ -49,6 +49,7 @@ export type SymbolSignals = {
   fh_levels?: number[] | null;
   fh_pe?: number | null;
   fh_52w_low?: number | null;
+  current_price?: number | null;
 };
 
 type Props = {
