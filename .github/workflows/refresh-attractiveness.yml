@@ -1,0 +1,56 @@
+name: Refresh Attractiveness
+
+# Fires after any signal refresh workflow completes successfully.
+# Calls the spotlight-discovery endpoint to trigger a fresh attractiveness
+# computation from the latest signal data.
+#
+# Required GitHub Actions secret:
+#   APP_URL  Base URL of the deployed Next.js app, e.g. https://your-app.vercel.app
+
+on:
+  workflow_run:
+    workflows:
+      - "Refresh Analyst Cache"
+      - "Refresh Analyst Ratings"
+      - "Refresh Technical Signals"
+      - "Refresh Short Interest"
+      - "Refresh Earnings Signals"
+      - "Refresh Economic Indicators"
+      - "Refresh Index Constituents"
+      - "Refresh Insider Signals"
+      - "Refresh Options Flow"
+      - "Refresh Politician Trades"
+      - "Refresh Social Sentiment"
+      - "Enrich Politician Signals"
+      - "Refresh Analyst Revisions"
+      - "Refresh Market Breadth"
+      - "Refresh Relative Strength"
+      - "Refresh Institutional Conviction"
+      - "Refresh Market Volatility"
+      - "Refresh Finnhub Technical Advisory"
+      - "Refresh Finnhub Support Resistance"
+      - "Refresh Finnhub Metrics"
+    types:
+      - completed
+
+jobs:
+  recompute:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Recompute attractiveness scores
+        env:
+          APP_URL: ${{ secrets.APP_URL }}
+        run: |
+          if [ -z "$APP_URL" ]; then
+            echo "::warning::APP_URL secret not set — skipping attractiveness recomputation"
+            exit 0
+          fi
+          echo "Triggered by: ${{ github.event.workflow_run.name }}"
+          echo "POST ${APP_URL}/api/spotlight-discovery"
+          curl --fail-with-body --show-error --silent \
+            -X GET "${APP_URL}/api/spotlight-discovery" \
+            -H "Cache-Control: no-cache, no-store" \
+            -w "\nHTTP %{http_code} — %{time_total}s\n" \
+            -o /dev/null

@@ -625,6 +625,36 @@ export function computeAttractiveness(s: AttractivenessSignals): AttractivenessR
     });
   }
 
+  // 17. Signal E: Market Volatility (VIX)
+  if (s.vix != null) {
+    if (s.vix < 15) {
+      score += 1; count++;
+      reasons.push("low market volatility");
+      signals.push({
+        name: "Market Volatility",
+        value: `VIX ${s.vix.toFixed(1)}`,
+        contribution: 1,
+        description: "Low VIX (<15) signals calm, favorable market conditions",
+      });
+    } else if (s.vix > 30) {
+      score -= 1; count++;
+      reasons.push("elevated market volatility");
+      signals.push({
+        name: "Market Volatility",
+        value: `VIX ${s.vix.toFixed(1)}`,
+        contribution: -1,
+        description: "Elevated VIX (>30) signals fear and market turbulence",
+      });
+    } else {
+      signals.push({
+        name: "Market Volatility",
+        value: `VIX ${s.vix.toFixed(1)}`,
+        contribution: 0,
+        description: "VIX in normal range (15–30)",
+      });
+    }
+  }
+
   // 18. Finnhub Signal F: Technical Advisory
   if (s.fh_advisory === "Strong Buy") {
     score += 1; count++;

@@ -71,6 +71,14 @@ jobs:
             "refresh-politician-trades.yml"
             "refresh-social-sentiment.yml"
             "enrich-politician-signals.yml"
+            "refresh-analyst-revisions.yml"
+            "refresh-market-breadth.yml"
+            "refresh-relative-strength.yml"
+            "refresh-institutional-conviction.yml"
+            "refresh-market-volatility.yml"
+            "refresh-finnhub-technical-advisory.yml"
+            "refresh-finnhub-support-resistance.yml"
+            "refresh-finnhub-metrics.yml"
           )
 
           for workflow in "${workflows[@]}"; do
