@@ -3,14 +3,11 @@ name: Daily Rebalance
 # Fires Mon-Fri at 14:00 Europe/Berlin
 # Orchestrates refresh → rebalance sequence without hour validation
 #
-# Triggers all refresh workflows, waits for completion, then executes rebalance.
+# Skips the refresh phase if signals were already refreshed within the last hour.
 #
 # Required GitHub Actions secrets:
 #   REBALANCE_API_URL  Public URL of the deployed Next.js app's rebalance
 #                      endpoint, e.g. https://your-app.vercel.app/api/rebalance
-#
-# Manual trigger: GitHub Actions UI → "Run workflow", or click
-# "Run rebalance now" in the app.
 
 on:
   schedule:
@@ -26,10 +23,37 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Check last refresh age
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          last_run=$(gh run list \
+            --workflow refresh-analyst-cache.yml \
+            --status completed \
+            --limit 1 \
+            --json updatedAt \
+            --jq '.[0].updatedAt // empty')
+
+          if [ -z "$last_run" ]; then
+            echo "No previous refresh found — will refresh"
+            echo "SKIP_REFRESH=false" >> "$GITHUB_ENV"
+          else
+            last_ts=$(date -d "$last_run" +%s)
+            now_ts=$(date +%s)
+            age_secs=$((now_ts - last_ts))
+            age_min=$((age_secs / 60))
+
+            if [ "$age_secs" -lt 3600 ]; then
+              echo "Last refresh ${age_min}m ago (< 1 hour) — skipping refresh, rebalancing directly"
+              echo "SKIP_REFRESH=true" >> "$GITHUB_ENV"
+            else
+              echo "Last refresh ${age_min}m ago (> 1 hour) — refreshing first"
+              echo "SKIP_REFRESH=false" >> "$GITHUB_ENV"
+            fi
+          fi
 
       - name: Trigger all refresh workflows
+        if: env.SKIP_REFRESH != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -48,8 +72,6 @@ jobs:
             "enrich-politician-signals.yml"
           )
 
-          triggered_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-
           for workflow in "${workflows[@]}"; do
             echo "Triggering $workflow..."
             gh workflow run "$workflow" --ref main
@@ -67,6 +89,7 @@ jobs:
           echo "REFRESH_RUN_IDS=$run_ids" >> "$GITHUB_ENV"
 
       - name: Wait for all refresh workflows to complete
+        if: env.SKIP_REFRESH != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
