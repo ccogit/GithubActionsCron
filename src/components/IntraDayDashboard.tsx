@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { AutoRefresh } from "@/components/AutoRefresh";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type AlpacaPosition = {
   symbol: string;
@@ -85,7 +84,17 @@ export function IntraDayDashboard({ initialPositions, initialAccount, initialTra
   const [account,   setAccount]   = useState(initialAccount);
   const [trades,    setTrades]    = useState(initialTrades);
 
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [lastUpdated,  setLastUpdated]  = useState<Date>(() => new Date());
+  const [secsLeft,     setSecsLeft]     = useState(() => {
+    const s = new Date().getSeconds();
+    return s === 0 ? 60 : 60 - s;
+  });
+
+  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const refresh = useCallback(async () => {
+    setIsRefreshing(true);
     try {
       const [posRes, tradeRes] = await Promise.all([
         fetch("/api/intraday-positions"),
@@ -100,13 +109,39 @@ export function IntraDayDashboard({ initialPositions, initialAccount, initialTra
         const d = await tradeRes.json();
         setTrades(d.trades ?? []);
       }
-    } catch {/* silent — stale data is fine */}
+      setLastUpdated(new Date());
+    } catch {/* silent — stale data is fine */} finally {
+      setIsRefreshing(false);
+    }
   }, []);
 
+  // Sync data refresh to wall-clock minute boundaries so it aligns with when
+  // the GitHub Actions trading workflow fires (repository_dispatch: tick).
   useEffect(() => {
-    const id = setInterval(refresh, 60_000);
-    return () => clearInterval(id);
+    const s = new Date().getSeconds();
+    const msUntilNextMinute = (s === 0 ? 60 : 60 - s) * 1000;
+
+    const firstTimer = setTimeout(() => {
+      refresh();
+      intervalRef.current = setInterval(refresh, 60_000);
+    }, msUntilNextMinute);
+
+    return () => {
+      clearTimeout(firstTimer);
+      if (intervalRef.current) clearInterval(intervalRef.current);
+    };
   }, [refresh]);
+
+  // Countdown ticker — runs every 500 ms for a smooth transition near 0
+  useEffect(() => {
+    const tick = () => {
+      const s = new Date().getSeconds();
+      setSecsLeft(s === 0 ? 60 : 60 - s);
+    };
+    tick();
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+  }, []);
 
   // Aggregate P&L per strategy from today's closed trades
   const stratStats: Record<string, { trades: number; pnl: number; wins: number }> = {};
@@ -125,9 +160,48 @@ export function IntraDayDashboard({ initialPositions, initialAccount, initialTra
   const buyingPower  = parseFloat(account.buying_power ?? "0") || 0;
   const totalUnrealizedPl = positions.reduce((s, p) => s + (parseFloat(p.unrealized_pl) || 0), 0);
 
+  const progressPct  = (secsLeft / 60) * 100;
+  const nearlyDue    = secsLeft <= 10;
+
   return (
     <div className="space-y-6">
-      <AutoRefresh intervalMs={60_000} />
+
+      {/* ── Status bar ──────────────────────────────────────────────────── */}
+      <div className="rounded-lg border border-white/8 bg-card px-4 py-3 space-y-2">
+        <div className="flex items-center justify-between text-xs font-mono">
+          {/* Left: live indicator + last-updated time */}
+          <span className="flex items-center gap-1.5 text-muted-foreground">
+            {isRefreshing ? (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                <span className="text-amber-400">Updating…</span>
+              </>
+            ) : (
+              <>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span>Updated {lastUpdated.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</span>
+              </>
+            )}
+          </span>
+
+          {/* Right: countdown */}
+          <span className={`tabular-nums transition-colors ${nearlyDue ? "text-amber-400 font-semibold" : "text-muted-foreground"}`}>
+            Next update in{" "}
+            <span className="text-foreground">
+              {String(Math.floor(secsLeft / 60)).padStart(1, "0")}:
+              {String(secsLeft % 60).padStart(2, "0")}
+            </span>
+          </span>
+        </div>
+
+        {/* Progress bar — depletes to the right as the minute progresses */}
+        <div className="w-full h-0.5 bg-white/8 rounded-full overflow-hidden">
+          <div
+            className={`h-full rounded-full transition-all duration-500 ${nearlyDue ? "bg-amber-400" : "bg-emerald-400/60"}`}
+            style={{ width: `${progressPct}%` }}
+          />
+        </div>
+      </div>
 
       {/* Account summary */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
