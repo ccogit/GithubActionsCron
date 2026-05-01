@@ -2,6 +2,8 @@ name: Daily Rebalance
 
 # Fires Mon-Fri at 14:00 Europe/Berlin
 #
+# Triggers all refresh workflows, waits for completion, then executes rebalance.
+#
 # Required GitHub Actions secrets:
 #   REBALANCE_API_URL  Public URL of the deployed Next.js app's rebalance
 #                      endpoint, e.g. https://your-app.vercel.app/api/rebalance
@@ -16,7 +18,79 @@ on:
   workflow_dispatch:
 
 jobs:
+  trigger-refreshes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Trigger all refresh workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          workflows=(
+            "refresh-analyst-cache.yml"
+            "refresh-analyst-ratings.yml"
+            "refresh-technical-signals.yml"
+            "refresh-short-interest.yml"
+            "refresh-earnings-signals.yml"
+            "refresh-economic-indicators.yml"
+            "refresh-index-constituents.yml"
+            "refresh-insider-signals.yml"
+            "refresh-options-flow.yml"
+            "refresh-politician-trades.yml"
+            "refresh-social-sentiment.yml"
+            "enrich-politician-signals.yml"
+          )
+
+          run_ids=""
+          for workflow in "${workflows[@]}"; do
+            echo "Triggering $workflow..."
+            run_id=$(gh workflow run "$workflow" --json id -q '.id')
+            run_ids="$run_ids $run_id"
+            echo "  Run ID: $run_id"
+          done
+          echo "REFRESH_RUN_IDS=$run_ids" >> "$GITHUB_ENV"
+
+      - name: Wait for all refresh workflows to complete
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_ids=($REFRESH_RUN_IDS)
+          max_wait=900  # 15 minutes
+          interval=10   # Check every 10 seconds
+          elapsed=0
+
+          while [ $elapsed -lt $max_wait ]; do
+            all_done=true
+
+            for run_id in "${run_ids[@]}"; do
+              status=$(gh run view "$run_id" --json conclusion -q '.conclusion')
+              if [ -z "$status" ] || [ "$status" == "null" ]; then
+                all_done=false
+                echo "Run $run_id still in progress..."
+              else
+                echo "Run $run_id completed with status: $status"
+              fi
+            done
+
+            if [ "$all_done" = true ]; then
+              echo "All refresh workflows completed!"
+              break
+            fi
+
+            sleep $interval
+            elapsed=$((elapsed + interval))
+          done
+
+          if [ $elapsed -ge $max_wait ]; then
+            echo "::error::Refresh workflows did not complete within 15 minutes"
+            exit 1
+          fi
+
   rebalance:
+    needs: trigger-refreshes
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:

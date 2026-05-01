@@ -7,9 +7,6 @@ name: Refresh Insider Signals
 # Required secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE
 
 on:
-  schedule:
-    - cron: '45 11 * * 1-5'  # 13:45 CEST (March-October)
-    - cron: '45 12 * * 1-5'  # 13:45 CET  (October-March)
   workflow_dispatch:
 
 jobs:
