@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { getPositions, getMultiBarChanges, getFirstBuyDates, type HistoricalChanges } from "@/lib/alpaca";
+import { getPositions, getMultiBarChanges, getFirstBuyDates, getAccountCash, type HistoricalChanges } from "@/lib/alpaca";
 import { RealtimeWatchlist } from "@/components/RealtimeWatchlist";
 import { CollapsibleSection } from "@/components/CollapsibleSection";
 import { AddStockForms } from "@/components/AddStockForms";
@@ -15,7 +15,7 @@ const CHART_COLORS = ["#00c896", "#3b82f6", "#f59e0b", "#e879f9", "#34d399", "#f
 export default async function StocksPage() {
   const db = createClient();
 
-  const [watchlistRes, ticksRes, alertsRes, positions] = await Promise.all([
+  const [watchlistRes, ticksRes, alertsRes, positions, accountCash] = await Promise.all([
     db.from("watchlist").select("*").order("created_at"),
     db
       .from("price_ticks")
@@ -24,6 +24,7 @@ export default async function StocksPage() {
       .order("fetched_at"),
     db.from("alert_log").select("*").order("sent_at", { ascending: false }).limit(20),
     getPositions(),
+    getAccountCash(),
   ]);
 
   const ownedPositionSymbols = (positions).map((p) => p.symbol);
@@ -174,6 +175,7 @@ export default async function StocksPage() {
             colors={CHART_COLORS}
             signals={signalsBySymbol}
             firstBuyDates={firstBuyDates}
+            accountCash={accountCash}
           />
         </CollapsibleSection>
 

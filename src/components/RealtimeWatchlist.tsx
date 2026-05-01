@@ -13,6 +13,7 @@ interface RealtimeWatchlistProps {
   colors: string[];
   signals?: Record<string, SymbolSignals>;
   firstBuyDates?: Record<string, string>;
+  accountCash?: number;
 }
 
 export function RealtimeWatchlist({
@@ -22,6 +23,7 @@ export function RealtimeWatchlist({
   colors,
   signals,
   firstBuyDates,
+  accountCash,
 }: RealtimeWatchlistProps) {
   const symbols = holdings.map((h) => h.symbol);
   const { ticks, latestPrices } = useRealtimeTicks(symbols, initialTicksBySymbol);
@@ -50,6 +52,7 @@ export function RealtimeWatchlist({
         colors={colors}
         signals={signals}
         firstBuyDates={firstBuyDates}
+        accountCash={accountCash}
       />
     </div>
   );

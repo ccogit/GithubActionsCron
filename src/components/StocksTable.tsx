@@ -59,6 +59,7 @@ type Props = {
   colors: string[];
   signals?: Record<string, SymbolSignals>;
   firstBuyDates?: Record<string, string>;
+  accountCash?: number;
 };
 
 function OverallSignalBadge({ s }: { s?: SymbolSignals }) {
@@ -96,7 +97,7 @@ function formatBuyDate(iso: string): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
-export function StocksTable({ holdings, latestPrices, periodChanges, colors, signals, firstBuyDates }: Props) {
+export function StocksTable({ holdings, latestPrices, periodChanges, colors, signals, firstBuyDates, accountCash }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
@@ -462,22 +463,36 @@ export function StocksTable({ holdings, latestPrices, periodChanges, colors, sig
         </tbody>
         {totalInvested > 0 && (
           <tfoot>
+            {/* Cash row — only shown when account cash is known and non-zero */}
+            {accountCash != null && accountCash > 0 && (
+              <tr className="border-t border-white/6 bg-white/[0.008]">
+                <td colSpan={4} className="py-1.5 px-3 text-xs text-muted-foreground/60 uppercase tracking-widest font-medium">
+                  Cash
+                </td>
+                <td className="py-1.5 px-3 text-right font-mono text-xs text-muted-foreground/80 tabular-nums">
+                  ${accountCash.toFixed(2)}
+                </td>
+                <td colSpan={5} />
+              </tr>
+            )}
+            {/* Portfolio total row */}
             <tr className="border-t border-white/10 bg-white/[0.015]">
               <td colSpan={4} className="py-2.5 px-3 text-xs font-medium text-muted-foreground uppercase tracking-widest">
                 Portfolio total
               </td>
               <td className="py-2.5 px-3 text-right font-mono tabular-nums">
                 {(() => {
-                  const totalPl    = totalCurrentValue - totalInvested;
-                  const totalPlPct = totalInvested > 0 ? (totalPl / totalInvested) * 100 : 0;
-                  const up         = totalPl >= 0;
+                  const portfolioTotal = totalCurrentValue + (accountCash ?? 0);
+                  const totalPl        = totalCurrentValue - totalInvested;
+                  const totalPlPct     = totalInvested > 0 ? (totalPl / totalInvested) * 100 : 0;
+                  const up             = totalPl >= 0;
                   return (
                     <div className="flex flex-col items-end leading-tight gap-[1px]">
                       <span className="font-semibold text-sm text-foreground">
-                        ${totalCurrentValue.toFixed(2)}
+                        ${portfolioTotal.toFixed(2)}
                       </span>
                       <span className="text-[10px] text-muted-foreground/70">
-                        cost ${totalInvested.toFixed(2)}
+                        positions ${totalCurrentValue.toFixed(2)} · cost ${totalInvested.toFixed(2)}
                       </span>
                       <span className={`text-[10px] font-medium ${up ? "text-emerald-400" : "text-red-400"}`}>
                         {up ? "+" : ""}${totalPl.toFixed(2)} ({up ? "+" : ""}{totalPlPct.toFixed(2)}%)

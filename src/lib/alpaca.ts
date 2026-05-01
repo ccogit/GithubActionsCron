@@ -133,6 +133,20 @@ export async function getAccountEquity(): Promise<number> {
   }
 }
 
+export async function getAccountCash(): Promise<number> {
+  try {
+    const res = await fetch(`${ENDPOINT}/account`, {
+      headers: headers(),
+      cache: "no-store",
+    });
+    if (!res.ok) return 0;
+    const data = await res.json();
+    return Math.max(0, parseFloat(data.cash ?? "0") || 0);
+  } catch {
+    return 0;
+  }
+}
+
 export async function getFirstBuyDates(symbols: string[]): Promise<Record<string, string>> {
   if (symbols.length === 0) return {};
   try {
