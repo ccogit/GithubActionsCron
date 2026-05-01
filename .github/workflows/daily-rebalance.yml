@@ -76,9 +76,9 @@ jobs:
             "refresh-relative-strength.yml"
             "refresh-institutional-conviction.yml"
             "refresh-market-volatility.yml"
-            "refresh-finnhub-technical-advisory.yml"
-            "refresh-finnhub-support-resistance.yml"
-            "refresh-finnhub-metrics.yml"
+            "refresh-technical-advisory.yml"
+            "refresh-support-resistance.yml"
+            "refresh-valuation-metrics.yml"
           )
 
           for workflow in "${workflows[@]}"; do
