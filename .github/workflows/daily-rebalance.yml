@@ -1,8 +1,6 @@
 name: Daily Rebalance
 
-# Fires Mon-Fri at 14:00 Europe/Berlin. GitHub cron is UTC and ignores DST,
-# so we register both possibilities (12:00 UTC during CEST, 13:00 UTC during
-# CET) and the first step bails out unless the local Berlin hour is 14.
+# Fires Mon-Fri at 14:00 Europe/Berlin
 #
 # Required GitHub Actions secrets:
 #   REBALANCE_API_URL  Public URL of the deployed Next.js app's rebalance
@@ -22,18 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Resolve Berlin hour
-        id: berlin
-        run: echo "hour=$(TZ='Europe/Berlin' date +%H)" >> "$GITHUB_OUTPUT"
-
-      - name: Skip if not 14:00 Berlin (only relevant for scheduled runs)
-        if: github.event_name == 'schedule' && steps.berlin.outputs.hour != '14'
-        run: |
-          echo "Berlin hour is ${{ steps.berlin.outputs.hour }} — not 14, skipping."
-          echo "BERLIN_SKIP=1" >> "$GITHUB_ENV"
-
       - name: Trigger rebalance
-        if: env.BERLIN_SKIP != '1'
         env:
           REBALANCE_URL: ${{ secrets.REBALANCE_API_URL }}
         run: |
