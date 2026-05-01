@@ -33,25 +33,29 @@ export function BudgetHistoryWidget() {
   const [range, setRange] = useState<Range>("1D");
   const [points, setPoints] = useState<PortfolioPoint[]>([]);
   const [baseValue, setBaseValue] = useState(0);
+  const [currentEquity, setCurrentEquity] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     setLoading(true);
     fetch(`/api/portfolio-history?range=${range}`)
       .then((r) => r.json())
-      .then(({ points, baseValue }) => {
+      .then(({ points, baseValue, currentEquity }) => {
         setPoints(points ?? []);
         setBaseValue(baseValue ?? 0);
+        if (currentEquity) setCurrentEquity(currentEquity);
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [range]);
 
-  const lastValue  = points.at(-1)?.value ?? 0;
-  const firstValue = points[0]?.value ?? baseValue;
-  const delta      = lastValue - firstValue;
-  const deltaPct   = firstValue > 0 ? (delta / firstValue) * 100 : 0;
-  const isUp       = delta >= 0;
+  // currentEquity is the live account value — consistent regardless of chart range.
+  // firstValue is the start of the selected period; delta shows period-over-period change.
+  const displayValue = currentEquity || points.at(-1)?.value || 0;
+  const firstValue   = points[0]?.value ?? baseValue;
+  const delta        = firstValue > 0 ? displayValue - firstValue : 0;
+  const deltaPct     = firstValue > 0 ? (delta / firstValue) * 100 : 0;
+  const isUp         = delta >= 0;
 
   const data = points.map((p) => ({ ts: p.timestamp, value: p.value }));
 
@@ -92,9 +96,9 @@ export function BudgetHistoryWidget() {
       {/* Key metric */}
       <div className="flex items-baseline gap-3 mb-5">
         <span className="text-3xl font-mono font-semibold text-foreground tabular-nums">
-          {loading ? "—" : `$${lastValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+          {loading ? "—" : `$${displayValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
         </span>
-        {!loading && lastValue > 0 && (
+        {!loading && displayValue > 0 && (
           <span className={`flex items-center gap-1 text-sm font-mono tabular-nums ${isUp ? "text-emerald-400" : "text-red-400"}`}>
             {isUp ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
             {isUp ? "+" : ""}${Math.abs(delta).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
