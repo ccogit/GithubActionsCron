@@ -21,6 +21,12 @@ const WORKFLOW_NAMES: Record<string, string> = {
   "refresh-insider-signals.yml":    "Insider Signals",
   "refresh-earnings-signals.yml":   "Earnings Signals",
   "refresh-social-sentiment.yml":   "Social Sentiment",
+  "refresh-options-flow.yml":       "Options Flow",
+  "refresh-analyst-revisions.yml":  "Analyst Revisions",
+  "refresh-market-breadth.yml":     "Market Breadth",
+  "refresh-relative-strength.yml":  "Relative Strength",
+  "refresh-institutional-conviction.yml": "Institutional Conviction",
+  "refresh-market-volatility.yml":  "Market Volatility",
   "refresh-economic-indicators.yml":"Economic Indicators",
   "enrich-politician-signals.yml":  "Enrich Signals",
 };
