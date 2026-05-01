@@ -11,12 +11,18 @@ import {
   Info,
   XCircle,
   TrendingUp,
+  Scale,
 } from 'lucide-react';
 
 interface PlannedSwap {
   sell: { symbol: string; qty: number; price: number; value: number; score: number };
   buy:  { symbol: string; qty: number; price: number; value: number; score: number };
   scoreDelta: number;
+}
+
+interface PlannedResize {
+  sell: { symbol: string; qty: number; price: number; value: number; score: number; targetValue: number };
+  buy:  { symbol: string; qty: number; price: number; value: number; score: number; targetValue: number };
 }
 
 interface PlannedBuy {
@@ -30,6 +36,7 @@ interface PlannedBuy {
 
 interface RebalancePlan {
   swaps: PlannedSwap[];
+  resizes: PlannedResize[];
   buys: PlannedBuy[];
   deployedBudget: number;
   totalValueBefore: number;
@@ -140,9 +147,10 @@ export function RebalanceView() {
       <div className="text-xs text-muted-foreground leading-relaxed flex items-start gap-2">
         <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-muted-foreground/60" />
         <span>
-          Swaps the lowest-scored holding for the best-scoring alternative when the improvement
-          justifies the trade, and deploys available cash into the top-scoring stocks — spread
-          across at least 3 positions to limit concentration risk. Universe restricted to
+          Three phases: (1) swap the lowest-scored holding for the best-scoring alternative
+          when the improvement justifies the trade; (2) right-size existing positions so
+          higher-scoring holdings have proportionally larger values; (3) deploy available
+          cash into top-scoring stocks across at least 3 positions. Universe restricted to
           Alpaca-tradable equities.
         </span>
       </div>
@@ -233,9 +241,10 @@ function SectionHeader({ label, count, accent }: { label: string; count: number;
 
 function PreviewBlock({ data }: { data: PreviewResponse }) {
   const { plan, summary } = data;
-  const hasSwaps = plan.swaps.length > 0;
-  const hasBuys  = plan.buys.length > 0;
-  const hasAnything = hasSwaps || hasBuys;
+  const hasSwaps   = plan.swaps.length > 0;
+  const hasResizes = (plan.resizes ?? []).length > 0;
+  const hasBuys    = plan.buys.length > 0;
+  const hasAnything = hasSwaps || hasResizes || hasBuys;
 
   return (
     <div className="space-y-3">
@@ -277,9 +286,21 @@ function PreviewBlock({ data }: { data: PreviewResponse }) {
             </>
           )}
 
+          {/* ── Right-size section ── */}
+          {hasResizes && (
+            <div className={hasSwaps ? 'mt-4' : ''}>
+              <SectionHeader label="Right-size Positions" count={(plan.resizes ?? []).length} accent="text-blue-400/70" />
+              <div className="space-y-2 mt-1">
+                {(plan.resizes ?? []).map((resize, i) => (
+                  <ResizeRow key={i} resize={resize} index={i + 1} />
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* ── New positions section ── */}
           {hasBuys && (
-            <div className={hasSwaps ? 'mt-4' : ''}>
+            <div className={(hasSwaps || hasResizes) ? 'mt-4' : ''}>
               <SectionHeader label="New Positions" count={plan.buys.length} accent="text-green-400/70" />
               <div className="space-y-2 mt-1">
                 {plan.buys.map((buy, i) => (
@@ -339,6 +360,39 @@ function SwapRow({ swap, index }: { swap: PlannedSwap; index: number }) {
       <div className="shrink-0 text-right">
         <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Δ score</div>
         <div className="text-base font-mono font-bold text-blue-400">+{swap.scoreDelta.toFixed(0)}</div>
+      </div>
+    </div>
+  );
+}
+
+function ResizeRow({ resize, index }: { resize: PlannedResize; index: number }) {
+  return (
+    <div className="border border-blue-500/20 rounded-lg p-3 bg-blue-500/[0.03] flex items-center gap-3">
+      <div className="text-[10px] font-mono text-muted-foreground w-6">#{index}</div>
+      <Scale className="w-3.5 h-3.5 text-blue-400/50 shrink-0" />
+
+      <div className="flex-1 min-w-0">
+        <div className="text-[10px] uppercase tracking-widest text-red-400/70">Trim</div>
+        <div className="font-mono font-semibold">{resize.sell.symbol}</div>
+        <div className="text-[11px] text-muted-foreground">
+          {resize.sell.qty} sh @ ${resize.sell.price.toFixed(2)} · <span className="font-mono">${resize.sell.value.toFixed(0)}</span>
+        </div>
+        <div className="text-[10px] text-muted-foreground/60 font-mono">
+          score +{resize.sell.score} · target ${resize.sell.targetValue.toFixed(0)}
+        </div>
+      </div>
+
+      <ArrowRight className="w-4 h-4 text-muted-foreground/40 shrink-0" />
+
+      <div className="flex-1 min-w-0">
+        <div className="text-[10px] uppercase tracking-widest text-blue-400/70">Add</div>
+        <div className="font-mono font-semibold">{resize.buy.symbol}</div>
+        <div className="text-[11px] text-muted-foreground">
+          {resize.buy.qty} sh @ ${resize.buy.price.toFixed(2)} · <span className="font-mono">${resize.buy.value.toFixed(0)}</span>
+        </div>
+        <div className="text-[10px] text-muted-foreground/60 font-mono">
+          score +{resize.buy.score} · target ${resize.buy.targetValue.toFixed(0)}
+        </div>
       </div>
     </div>
   );

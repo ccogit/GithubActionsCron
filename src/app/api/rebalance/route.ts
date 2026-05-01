@@ -291,28 +291,26 @@ export async function POST(request: NextRequest) {
     // Step 2: recompute the plan server-side — never trust a client-supplied list
     const { plan, summary } = await buildPlan(config);
 
-    if (plan.swaps.length === 0 && plan.buys.length === 0) {
+    if (plan.swaps.length === 0 && plan.resizes.length === 0 && plan.buys.length === 0) {
       return NextResponse.json({ canceled, executed: [], plan, summary });
     }
 
     const executed: ExecutedOrder[] = [];
 
-    // Sells first; Alpaca paper auto-handles unsettled cash for the buys.
-    for (const swap of plan.swaps) {
-      executed.push(await placeOrder(swap.sell.symbol, swap.sell.qty, "sell"));
-    }
+    // Sells first (swaps + resizes together) so cash is available before any buys
+    for (const swap   of plan.swaps)   executed.push(await placeOrder(swap.sell.symbol,   swap.sell.qty,   "sell"));
+    for (const resize of plan.resizes) executed.push(await placeOrder(resize.sell.symbol, resize.sell.qty, "sell"));
 
     // Brief pause so sells register before buys hit
-    if (plan.swaps.length > 0) {
+    if (plan.swaps.length > 0 || plan.resizes.length > 0) {
       await new Promise((r) => setTimeout(r, 1000));
     }
 
-    // Swap buys
-    for (const swap of plan.swaps) {
-      executed.push(await placeOrder(swap.buy.symbol, swap.buy.qty, "buy"));
-    }
+    // Buys (swaps + resizes together)
+    for (const swap   of plan.swaps)   executed.push(await placeOrder(swap.buy.symbol,   swap.buy.qty,   "buy"));
+    for (const resize of plan.resizes) executed.push(await placeOrder(resize.buy.symbol, resize.buy.qty, "buy"));
 
-    // Fresh budget buys (run after swap buys to avoid competing for the same cash)
+    // Fresh budget buys (run after swap/resize buys to avoid competing for the same cash)
     if (plan.buys.length > 0) {
       await new Promise((r) => setTimeout(r, 500));
       for (const buy of plan.buys) {

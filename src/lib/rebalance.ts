@@ -1,9 +1,12 @@
 // Pure rebalancing algorithm. No I/O — takes data in, returns a plan.
 //
-// Two phases:
-//  1. Swap phase  — iterative greedy swaps: sell worst-scoring held stock,
+// Three phases:
+//  1. Swap phase     — iterative greedy swaps: sell worst-scoring held stock,
 //     buy best-scoring non-held stock, when score delta >= threshold.
-//  2. Deploy phase — invest free cash across the top-scoring candidates,
+//  2. Right-size phase — score-proportional resizing of existing positions:
+//     trim overweight holdings and add to underweight ones so that each
+//     position's value reflects its relative score.
+//  3. Deploy phase   — invest free cash across the top-scoring candidates,
 //     score-proportionally weighted, with hard diversification floor (minBuysForDeployment)
 //     and per-stock concentration cap (maxSingleAllocationPct).
 
@@ -44,6 +47,11 @@ export interface PlannedBuy {
   allocationPct: number; // fraction of total deployed budget
 }
 
+export interface PlannedResize {
+  sell: { symbol: string; qty: number; price: number; value: number; score: number; targetValue: number };
+  buy:  { symbol: string; qty: number; price: number; value: number; score: number; targetValue: number };
+}
+
 export interface SkipReason {
   reason: string;
   details?: string;
@@ -51,6 +59,7 @@ export interface SkipReason {
 
 export interface RebalancePlan {
   swaps: PlannedSwap[];
+  resizes: PlannedResize[];    // partial sell/buy pairs to right-size existing positions
   buys: PlannedBuy[];          // fresh purchases from available cash
   deployedBudget: number;      // total USD committed to buys
   totalValueBefore: number;
@@ -147,6 +156,11 @@ export function planRebalance(
   }
 
   // ---------------------------------------------------------------------------
+  // Right-size phase — score-proportional resizing of existing positions
+  // ---------------------------------------------------------------------------
+  const resizes = rightSizePositions(portfolio, heldScore, config);
+
+  // ---------------------------------------------------------------------------
   // Deploy phase — invest free cash
   // ---------------------------------------------------------------------------
   const { buys, deployedBudget } = deployFreeCash(portfolio, universeMap, config, skipped);
@@ -161,6 +175,7 @@ export function planRebalance(
 
   return {
     swaps,
+    resizes,
     buys,
     deployedBudget,
     totalValueBefore,
@@ -168,6 +183,92 @@ export function planRebalance(
     iterations: iter,
     skipped,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Right-size phase
+// ---------------------------------------------------------------------------
+// For each held position that qualifies (score >= minBuyScore), compute a
+// score-proportional target value within the total held-equity budget.
+// Positions whose current value deviates from their target by more than
+// MIN_RESIZE_DEVIATION_PCT (or minTradeUsd, whichever is larger) are paired
+// up: overweight shares are sold and the proceeds buy into underweight ones.
+
+const MIN_RESIZE_DEVIATION_PCT = 0.10; // 10% of target before a resize is triggered
+
+function rightSizePositions(
+  portfolio: Map<string, PortfolioPosition>,
+  heldScore: Map<string, number>,
+  config: RebalanceConfig,
+): PlannedResize[] {
+  const resizes: PlannedResize[] = [];
+
+  // Only include positions that are worth keeping (score qualifies)
+  const eligible = Array.from(portfolio.entries())
+    .map(([sym, pos]) => ({ sym, pos, score: heldScore.get(sym) ?? 0 }))
+    .filter(p => p.score >= config.minBuyScore && p.pos.qty > 0 && p.pos.price > 0);
+
+  if (eligible.length < 2) return resizes;
+
+  const totalValue = eligible.reduce((s, p) => s + p.pos.qty * p.pos.price, 0);
+  const totalScore = eligible.reduce((s, p) => s + p.score, 0);
+  if (totalScore === 0 || totalValue === 0) return resizes;
+
+  const capPct    = config.maxSingleAllocationPct ?? 0.40;
+  const capAmount = totalValue * capPct;
+
+  // Score-proportional targets with concentration cap
+  const rawTargets = eligible.map(p => (p.score / totalScore) * totalValue);
+  const targets    = redistributeCapped(rawTargets, capAmount, totalValue);
+
+  type Item = {
+    sym: string; pos: PortfolioPosition; score: number;
+    currentValue: number; targetValue: number; deviation: number;
+  };
+
+  const items: Item[] = eligible.map((p, i) => {
+    const currentValue = p.pos.qty * p.pos.price;
+    const targetValue  = targets[i];
+    return { sym: p.sym, pos: p.pos, score: p.score, currentValue, targetValue, deviation: currentValue - targetValue };
+  });
+
+  const minDev = (item: Item) =>
+    Math.max(config.minTradeUsd, item.targetValue * MIN_RESIZE_DEVIATION_PCT);
+
+  const overweight  = items.filter(d =>  d.deviation >  minDev(d)).sort((a, b) => b.deviation - a.deviation);
+  const underweight = items.filter(d => -d.deviation >  minDev(d)).sort((a, b) => a.deviation - b.deviation);
+
+  // Greedy matching: pair surplus sellers with deficit buyers
+  let oi = 0, ui = 0;
+  while (oi < overweight.length && ui < underweight.length) {
+    const over  = overweight[oi];
+    const under = underweight[ui];
+
+    const tradeValue = Math.min(over.deviation, -under.deviation);
+    if (tradeValue < config.minTradeUsd) { oi++; ui++; continue; }
+
+    const sellQty = Math.floor(tradeValue / over.pos.price);
+    const buyQty  = Math.floor(tradeValue / under.pos.price);
+
+    if (sellQty <= 0) { oi++; continue; }
+    if (buyQty  <= 0) { ui++; continue; }
+
+    const sellValue = sellQty * over.pos.price;
+    const buyValue  = buyQty  * under.pos.price;
+
+    resizes.push({
+      sell: { symbol: over.sym,  qty: sellQty, price: over.pos.price,  value: sellValue, score: over.score,  targetValue: over.targetValue  },
+      buy:  { symbol: under.sym, qty: buyQty,  price: under.pos.price, value: buyValue,  score: under.score, targetValue: under.targetValue },
+    });
+
+    over.deviation  -= sellValue;
+    under.deviation += buyValue;
+
+    if ( over.deviation <=  minDev(over))  oi++;
+    if (-under.deviation <=  minDev(under)) ui++;
+  }
+
+  return resizes;
 }
 
 // ---------------------------------------------------------------------------
