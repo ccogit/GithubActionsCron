@@ -45,12 +45,21 @@ jobs:
             "enrich-politician-signals.yml"
           )
 
-          run_ids=""
+          triggered_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
           for workflow in "${workflows[@]}"; do
             echo "Triggering $workflow..."
-            run_id=$(gh workflow run "$workflow" --json id -q '.id')
+            gh workflow run "$workflow" --ref main
+          done
+
+          # Give GitHub a few seconds to register the runs
+          sleep 8
+
+          run_ids=""
+          for workflow in "${workflows[@]}"; do
+            run_id=$(gh run list --workflow "$workflow" --limit 1 --json databaseId --jq '.[0].databaseId')
+            echo "  $workflow -> run $run_id"
             run_ids="$run_ids $run_id"
-            echo "  Run ID: $run_id"
           done
           echo "REFRESH_RUN_IDS=$run_ids" >> "$GITHUB_ENV"
 
@@ -68,7 +77,7 @@ jobs:
             all_done=true
 
             for run_id in "${run_ids[@]}"; do
-              conclusion=$(gh run view "$run_id" --json conclusion -q '.conclusion')
+              conclusion=$(gh run view "$run_id" --json conclusion --jq '.conclusion')
               if [ -z "$conclusion" ] || [ "$conclusion" == "null" ]; then
                 all_done=false
               else
@@ -80,7 +89,7 @@ jobs:
 
             if [ "$all_done" = true ]; then
               if [ -z "$failed_runs" ]; then
-                echo "✓ All refresh workflows completed successfully!"
+                echo "All refresh workflows completed successfully!"
               else
                 echo "::error::Some refresh workflows failed:$failed_runs"
                 exit 1
