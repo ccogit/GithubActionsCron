@@ -86,14 +86,35 @@ export function IntraDayDashboard({ initialPositions, initialAccount, initialTra
   const [account,   setAccount]   = useState(initialAccount);
   const [trades,    setTrades]    = useState(initialTrades);
 
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const [lastUpdated,  setLastUpdated]  = useState<Date>(() => new Date());
-  const [secsLeft,     setSecsLeft]     = useState(() => {
+  const [isRefreshing,   setIsRefreshing]   = useState(false);
+  const [lastUpdated,    setLastUpdated]    = useState<Date>(() => new Date());
+  const [openStatus,     setOpenStatus]     = useState<"idle" | "loading" | "ok" | "error">("idle");
+  const [openError,      setOpenError]      = useState<string | null>(null);
+  const [secsLeft,       setSecsLeft]       = useState(() => {
     const s = new Date().getSeconds();
     return s === 0 ? 60 : 60 - s;
   });
 
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const openDailyBaseline = useCallback(async () => {
+    setOpenStatus("loading");
+    setOpenError(null);
+    try {
+      const res = await fetch("/api/intraday-daily-open", { method: "POST" });
+      const d   = await res.json();
+      if (d.ok) {
+        setOpenStatus("ok");
+        setTimeout(() => setOpenStatus("idle"), 4000);
+      } else {
+        setOpenStatus("error");
+        setOpenError(d.error ?? "Unknown error");
+      }
+    } catch (e) {
+      setOpenStatus("error");
+      setOpenError(String(e));
+    }
+  }, []);
 
   const refresh = useCallback(async () => {
     setIsRefreshing(true);
@@ -203,6 +224,33 @@ export function IntraDayDashboard({ initialPositions, initialAccount, initialTra
             style={{ width: `${progressPct}%` }}
           />
         </div>
+      </div>
+
+      {/* ── Manual controls ─────────────────────────────────────────────── */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <button
+          onClick={openDailyBaseline}
+          disabled={openStatus === "loading"}
+          className="inline-flex items-center gap-2 rounded-md border border-sky-400/30 bg-sky-400/10 px-3 py-1.5 text-xs font-medium text-sky-400 transition-opacity hover:opacity-80 disabled:opacity-40"
+        >
+          {openStatus === "loading" ? (
+            <>
+              <span className="w-3 h-3 rounded-full border border-sky-400/60 border-t-sky-400 animate-spin" />
+              Dispatching…
+            </>
+          ) : openStatus === "ok" ? (
+            <>
+              <span className="text-emerald-400">✓</span>
+              Dispatched
+            </>
+          ) : (
+            "Open Daily Baseline"
+          )}
+        </button>
+
+        {openStatus === "error" && openError && (
+          <span className="text-xs text-red-400 font-mono">{openError}</span>
+        )}
       </div>
 
       {/* Account summary */}
