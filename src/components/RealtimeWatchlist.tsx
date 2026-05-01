@@ -46,7 +46,6 @@ export function RealtimeWatchlist({
         latestPrices={latestPrices}
         periodChanges={periodChanges}
         colors={colors}
-        ticksBySymbol={ticks}
         signals={signals}
       />
     </div>

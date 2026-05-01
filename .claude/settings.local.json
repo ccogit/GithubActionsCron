@@ -1,4 +1,13 @@
 {
+  "env": {
+    "ANTHROPIC_BASE_URL": "https://integrate.api.nvidia.com/v1",
+    "ANTHROPIC_API_KEY": "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",
+    "ANTHROPIC_CUSTOM_MODEL_OPTION": "meta/llama-3.1-70b-instruct",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL": "meta/llama-3.1-70b-instruct",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL": "meta/llama-3.1-70b-instruct",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL": "meta/llama-3.1-70b-instruct",
+    "CLAUDE_CODE_SUBAGENT_MODEL": "meta/llama-3.1-70b-instruct"
+  },
   "permissions": {
     "allow": [
       "Bash(npx create-next-app@latest *)",
@@ -48,7 +57,9 @@
       "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")",
       "Bash(gh workflow *)",
       "PowerShell(gh workflow *)",
-      "Bash(git rm *)"
+      "Bash(git rm *)",
+      "WebFetch(domain:docs.nvidia.com)",
+      "Skill(update-config)"
     ]
   }
 }

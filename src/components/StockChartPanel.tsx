@@ -5,7 +5,7 @@ import { TrendingUp, TrendingDown } from "lucide-react";
 import { PriceChart } from "@/components/PriceChart";
 import type { PriceTick } from "@/lib/types";
 
-const PERIODS = ["2h", "1D", "1W", "1M", "3M"] as const;
+const PERIODS = ["1D", "1W", "1M", "3M"] as const;
 type Period = (typeof PERIODS)[number];
 
 type Bar = { time: string; price: number };
@@ -22,7 +22,6 @@ function barsToTicks(bars: Bar[]): PriceTick[] {
 type Props = {
   symbol: string;
   color: string;
-  initialTicks: PriceTick[];
   currentPrice?: number;
   minPrice?: number;
 };
@@ -30,19 +29,14 @@ type Props = {
 export function StockChartPanel({
   symbol,
   color,
-  initialTicks,
   currentPrice,
   minPrice = 0,
 }: Props) {
-  const [period, setPeriod] = useState<Period>("2h");
-  const [ticks, setTicks] = useState<PriceTick[]>(initialTicks);
-  const [loading, setLoading] = useState(false);
+  const [period, setPeriod] = useState<Period>("1D");
+  const [ticks, setTicks] = useState<PriceTick[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (period === "2h") {
-      setTicks(initialTicks);
-      return;
-    }
     setLoading(true);
     fetch(`/api/stock-bars?symbol=${symbol}&period=${period}`)
       .then((r) => r.json())
@@ -51,7 +45,7 @@ export function StockChartPanel({
       })
       .catch(() => setTicks([]))
       .finally(() => setLoading(false));
-  }, [period, symbol, initialTicks]);
+  }, [period, symbol]);
 
   const prices = ticks.map((t) => t.price);
   const first = prices[0];

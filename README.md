@@ -34,7 +34,7 @@ The Next.js frontend reads directly from Supabase and auto-refreshes every 60 se
 
 ## Features
 
-- **Live dashboard** — dark-themed UI with per-stock price charts (2-hour history) and auto-refresh
+- **Live dashboard** — dark-themed UI with per-stock price charts (daily/weekly/monthly) and auto-refresh
 - **Watchlist management** — add/remove symbols, set per-symbol alert thresholds via the UI
 - **Email alerts** — triggered when a price drops below threshold; 1-hour cooldown per symbol prevents spam
 - **Price history** — every tick stored in Supabase for charting and audit

@@ -45,7 +45,6 @@ type Props = {
   latestPrices: Record<string, number>;
   periodChanges: Record<string, PeriodChanges>;
   colors: string[];
-  ticksBySymbol: Record<string, PriceTick[]>;
   signals?: Record<string, SymbolSignals>;
 };
 
@@ -79,7 +78,7 @@ function OverallSignalBadge({ s }: { s?: SymbolSignals }) {
   );
 }
 
-export function StocksTable({ holdings, latestPrices, periodChanges, colors, ticksBySymbol, signals }: Props) {
+export function StocksTable({ holdings, latestPrices, periodChanges, colors, signals }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
@@ -393,7 +392,6 @@ export function StocksTable({ holdings, latestPrices, periodChanges, colors, tic
                     <StockChartPanel
                       symbol={h.symbol}
                       color={color}
-                      initialTicks={ticksBySymbol[h.symbol] ?? []}
                       currentPrice={price}
                       minPrice={minPrice}
                     />
