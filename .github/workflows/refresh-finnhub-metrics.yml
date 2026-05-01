@@ -1,0 +1,23 @@
+name: Refresh Finnhub Metrics
+
+on:
+  schedule:
+    - cron: '0 10 * * 0'  # Weekly on Sundays at 10 AM UTC
+  workflow_dispatch:
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - run: pip install requests supabase
+      - name: Refresh metrics
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+        run: python worker/refresh_finnhub_metrics.py

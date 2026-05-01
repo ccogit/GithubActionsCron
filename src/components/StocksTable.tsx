@@ -45,6 +45,10 @@ export type SymbolSignals = {
   rs_3m?: number | null;
   inst_pct?: number | null;
   vix?: number | null;
+  fh_advisory?: string | null;
+  fh_levels?: number[] | null;
+  fh_pe?: number | null;
+  fh_52w_low?: number | null;
 };
 
 type Props = {

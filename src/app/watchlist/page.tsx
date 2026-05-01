@@ -77,7 +77,8 @@ export default async function StocksPage() {
     const [
       barChanges, analystRes, politicianRes, ratingsRes, techRes, 
       shortRes, insiderRes, earningsRes, socialRes, optionsRes, 
-      revisionsRes, rsRes, instRes, breadthRes, vixRes, ecoRes
+      revisionsRes, rsRes, instRes, breadthRes, vixRes, 
+      fhAdvisoryRes, fhSRRes, fhMetricsRes, ecoRes
     ] = await Promise.all([
         getMultiBarChanges(ownedSymbols),
         db.from("analyst_cache").select("symbol, upside_pct").in("symbol", ownedSymbols),
@@ -94,6 +95,9 @@ export default async function StocksPage() {
         db.from("institutional_conviction").select("symbol, pct_held_institutions").in("symbol", ownedSymbols),
         db.from("market_breadth").select("*"),
         db.from("market_volatility").select("*").eq("indicator", "VIX").single(),
+        db.from("finnhub_technical_advisory").select("symbol, advisory").in("symbol", ownedSymbols),
+        db.from("finnhub_support_resistance").select("symbol, levels").in("symbol", ownedSymbols),
+        db.from("finnhub_metrics").select("symbol, pe_ttm, low_52w").in("symbol", ownedSymbols),
         db.from("economic_indicators").select("indicator, value"),
       ]);
     historicalChanges = barChanges;
@@ -105,7 +109,17 @@ export default async function StocksPage() {
     const breadthMap: Record<string, number> = {};
     for (const b of (breadthRes.data as any[] ?? [])) breadthMap[b.exchange] = b.pct_above_sma50;
 
-    for (const sym of ownedSymbols) signalsBySymbol[sym] = { changePct: changes[sym] ?? null };
+    for (const sym of ownedSymbols) {
+      const tickPrice = latestPrices[sym];
+      const h = holdings.find(x => x.symbol === sym);
+      const fallbackPrice = h?.position ? parseFloat(h.position.current_price) : undefined;
+      const currentPrice = tickPrice ?? fallbackPrice ?? null;
+      
+      signalsBySymbol[sym] = { 
+        changePct: changes[sym] ?? null,
+        current_price: currentPrice
+      };
+    }
 
     for (const row of analystRes.data ?? [])    signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], upside_pct: row.upside_pct };
     for (const row of politicianRes.data ?? []) signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], buy_count: row.buy_count, sell_count: row.sell_count, news_sentiment: row.news_sentiment, trends_direction: row.trends_direction };
@@ -119,6 +133,9 @@ export default async function StocksPage() {
     for (const row of revisionsRes.data ?? [])  signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], rev_ratio: row.rev_ratio };
     for (const row of rsRes.data ?? [])         signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], rs_3m: row.rs_3m };
     for (const row of instRes.data ?? [])       signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], inst_pct: row.pct_held_institutions };
+    for (const row of fhAdvisoryRes.data ?? []) signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], fh_advisory: row.advisory };
+    for (const row of fhSRRes.data ?? [])       signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], fh_levels: row.levels };
+    for (const row of fhMetricsRes.data ?? [])  signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], fh_pe: row.pe_ttm, fh_52w_low: row.low_52w };
 
     // Inject macro context (same for all symbols or exchange-specific)
     for (const sym of ownedSymbols) {

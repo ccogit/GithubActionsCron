@@ -65,6 +65,19 @@ export interface AttractivenessSignals {
   // --- signal E: market volatility (macro, daily) ---
   vix?: number | null;               // VIX level
 
+  // --- finnhub signal F: technical advisory (daily) ---
+  fh_advisory?: string | null;       // 'Strong Buy' | 'Buy' | 'Neutral' | 'Sell' | 'Strong Sell'
+
+  // --- finnhub signal G: support/resistance (daily) ---
+  fh_levels?: number[] | null;       // array of levels
+
+  // --- finnhub signal H: metrics (weekly) ---
+  fh_pe?: number | null;
+  fh_52w_low?: number | null;
+
+  // --- current price for proximity signals ---
+  current_price?: number | null;
+
   // --- macro context (FRED economic indicators, daily) ---
   fed_rate?: number | null;          // Federal Funds Rate %
   unemployment?: number | null;      // Unemployment Rate %
@@ -612,19 +625,104 @@ export function computeAttractiveness(s: AttractivenessSignals): AttractivenessR
     });
   }
 
-  // 17. Macro Dampener E: VIX (Extreme Fear)
-  if (s.vix != null && s.vix > 30) {
-    score -= 1; count++;
-    reasons.push("extreme market fear");
+  // 18. Finnhub Signal F: Technical Advisory
+  if (s.fh_advisory === "Strong Buy") {
+    score += 1; count++;
+    reasons.push("expert technical conviction");
     signals.push({
-      name: "VIX (Fear Index)",
-      value: s.vix.toFixed(1),
+      name: "Expert Technicals",
+      value: "Strong Buy",
+      contribution: 1,
+      description: "Finnhub consensus of 15+ indicators is 'Strong Buy'",
+    });
+  } else if (s.fh_advisory === "Strong Sell") {
+    score -= 1; count++;
+    reasons.push("expert technical weakness");
+    signals.push({
+      name: "Expert Technicals",
+      value: "Strong Sell",
       contribution: -1,
-      description: "High market volatility dampens attractiveness",
+      description: "Finnhub consensus of 15+ indicators is 'Strong Sell'",
+    });
+  } else {
+    signals.push({
+      name: "Expert Technicals",
+      value: s.fh_advisory || "Neutral",
+      contribution: 0,
+      description: "Finnhub technical consensus is neutral or unavailable",
     });
   }
 
-  // 18. Macro context (Fed rate + unemployment)
+  // 19. Finnhub Signal G: Support/Resistance Safety
+  if (s.fh_levels && s.fh_levels.length > 0 && s.current_price != null) {
+    const support = Math.max(...s.fh_levels.filter(l => l < s.current_price!));
+    if (support > 0 && support !== -Infinity) {
+      const margin = (s.current_price - support) / support;
+      if (margin > 0 && margin < 0.03) {
+        score += 1; count++;
+        reasons.push("near support floor");
+        signals.push({
+          name: "Support Cushion",
+          value: `+${(margin * 100).toFixed(1)}%`,
+          contribution: 1,
+          description: `Trading within 3% of a major support level ($${support.toFixed(2)})`,
+        });
+      } else {
+        signals.push({
+          name: "Support Cushion",
+          value: `+${(margin * 100).toFixed(1)}%`,
+          contribution: 0,
+          description: "Trading safely above the nearest major support",
+        });
+      }
+    }
+  }
+
+  // 20. Finnhub Signal H: Valuation Sanity
+  if (s.fh_pe != null && s.fh_pe > 0) {
+    if (s.fh_pe < 20) {
+      score += 1; count++;
+      reasons.push("attractive P/E ratio");
+      signals.push({
+        name: "Valuation (P/E)",
+        value: s.fh_pe.toFixed(1),
+        contribution: 1,
+        description: "P/E ratio < 20 indicates potential value",
+      });
+    } else if (s.fh_pe > 60) {
+      score -= 1; count++;
+      reasons.push("high valuation risk");
+      signals.push({
+        name: "Valuation (P/E)",
+        value: s.fh_pe.toFixed(1),
+        contribution: -1,
+        description: "P/E ratio > 60 indicates overvaluation risk",
+      });
+    } else {
+      signals.push({
+        name: "Valuation (P/E)",
+        value: s.fh_pe.toFixed(1),
+        contribution: 0,
+        description: "P/E ratio is within normal historical range",
+      });
+    }
+  }
+
+  if (s.fh_52w_low != null && s.current_price != null) {
+    const margin = (s.current_price - s.fh_52w_low) / s.fh_52w_low;
+    if (margin > 0 && margin < 0.05) {
+      score += 1; count++;
+      reasons.push("near 52w low");
+      signals.push({
+        name: "Cycle Value",
+        value: `+${(margin * 100).toFixed(1)}%`,
+        contribution: 1,
+        description: "Trading within 5% of 52-week low (mean reversion potential)",
+      });
+    }
+  }
+
+  // 21. Macro context (Fed rate + unemployment)
   if (s.fed_rate != null) {
     if (s.fed_rate >= 5) {
       score -= 1; count++;
