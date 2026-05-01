@@ -4,8 +4,16 @@ Runs every minute. Scores every stock in UNIVERSE using intraday_attractiveness
 (purely technical signals), then:
 
   1. EXIT:  Close positions whose score turned negative, or that hit a stop/target.
-  2. ENTER: Deploy remaining cash into the top-scoring stocks not yet held,
+  2. ENTER: Deploy all available cash into the top-scoring stocks not yet held,
             proportionally weighted by score, respecting the global 20-stock cap.
+
+Budget rule
+-----------
+  deployable = equity − market_value_of_open_positions   (≈ cash on hand)
+  budget     = deployable × DEPLOY_BUFFER                (5 % reserve for fills)
+
+All budget is deployed — there is no MAX_DEPLOY_FRAC holdback.  Each candidate
+receives (score / Σscores) × budget so better signals get more capital.
 
 Separation guarantee
 --------------------
@@ -27,11 +35,11 @@ SUPABASE_URL          = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_ROLE = os.environ["SUPABASE_SERVICE_ROLE"]
 
 STRATEGY         = "portfolio"
-MIN_ENTRY_SCORE  = 2      # only enter if intraday score ≥ 2
-EXIT_SCORE_FLOOR = 0      # close if score drops below 0
-STOP_LOSS_PCT    = 0.03   # 3 % stop loss
-TAKE_PROFIT_PCT  = 0.05   # 5 % take profit
-MAX_DEPLOY_FRAC  = 0.60   # deploy at most 60% of buying power at once
+MIN_ENTRY_SCORE  = 1      # any net-positive signal qualifies
+EXIT_SCORE_FLOOR = 0      # exit if score drops to 0 or below
+STOP_LOSS_PCT    = 0.03   # 3 % hard stop
+TAKE_PROFIT_PCT  = 0.05   # 5 % take-profit
+DEPLOY_BUFFER    = 0.95   # keep 5 % cash reserve for order execution
 
 
 def _score_all_universe() -> dict[str, dict]:
@@ -56,33 +64,21 @@ def _proportional_allocations(
     candidates: list[tuple[str, dict]],
     budget: float,
 ) -> dict[str, float]:
-    """Score-proportional allocation with per-stock cap. Returns {symbol: usd}."""
-    if not candidates:
+    """
+    Pure score-proportional allocation — no per-stock cap.
+
+    Each candidate receives (score / Σscores) × budget.
+    The sum of all allocations equals budget exactly.
+    Falls back to equal allocation if all scores are identical.
+    """
+    if not candidates or budget <= 0:
         return {}
-    cap      = shared.MAX_POSITION_USD   # hard per-stock ceiling
     total_sc = sum(r["score"] for _, r in candidates)
     if total_sc <= 0:
-        return {}
-
-    allocs: dict[str, float] = {}
-    surplus = 0.0
-    for sym, r in candidates:
-        raw = (r["score"] / total_sc) * budget
-        if raw > cap:
-            surplus += raw - cap
-            allocs[sym] = cap
-        else:
-            allocs[sym] = raw
-
-    # One-pass redistribution of surplus to uncapped entries
-    if surplus > 0:
-        uncapped = [(s, a) for s, a in allocs.items() if a < cap]
-        if uncapped:
-            extra_each = surplus / len(uncapped)
-            for s, a in uncapped:
-                allocs[s] = min(a + extra_each, cap)
-
-    return allocs
+        # Fallback: equal split (all scores equal or zero)
+        per = budget / len(candidates)
+        return {sym: per for sym, _ in candidates}
+    return {sym: (r["score"] / total_sc) * budget for sym, r in candidates}
 
 
 def run(db) -> None:
@@ -99,10 +95,9 @@ def run(db) -> None:
     # -----------------------------------------------------------------------
     # 2. Fetch current state from Alpaca
     # -----------------------------------------------------------------------
-    positions     = shared.get_positions()
-    position_map  = {p["symbol"]: p for p in positions}
-    account       = shared.get_account()
-    buying_power  = float(account.get("buying_power", 0) or 0)
+    positions    = shared.get_positions()
+    position_map = {p["symbol"]: p for p in positions}
+    account      = shared.get_account()
 
     # -----------------------------------------------------------------------
     # 3. Exit check — portfolio manager's own open trades
@@ -117,10 +112,10 @@ def run(db) -> None:
     )
     closed_ids: set[int] = set()
     for trade in open_trades:
-        sym  = trade["symbol"]
-        pos  = position_map.get(sym)
+        sym = trade["symbol"]
+        pos = position_map.get(sym)
         if pos is None:
-            continue  # already closed externally (e.g., EOD cleanup)
+            continue  # already closed externally (e.g. EOD cleanup)
 
         current_price = float(pos["current_price"])
         entry_price   = float(trade["entry_price"])
@@ -128,7 +123,6 @@ def run(db) -> None:
         take_profit   = float(trade["take_profit"])
         qty           = int(trade["qty"])
         score         = scores.get(sym, {}).get("score", -999)
-        # unrealized_plpc is a decimal fraction, e.g. "0.0523" = +5.23%
         unr_plpc      = float(pos.get("unrealized_plpc", 0) or 0)
 
         exit_reason = exit_status = None
@@ -176,7 +170,23 @@ def run(db) -> None:
         return
 
     # -----------------------------------------------------------------------
-    # 5. Filter candidates
+    # 5. Compute deployable cash
+    #    equity − market_value_already_invested ≈ uninvested cash
+    # -----------------------------------------------------------------------
+    equity           = float(account.get("equity", 0) or 0)
+    already_invested = sum(float(p.get("market_value", 0) or 0) for p in positions)
+    deployable_cash  = max(0.0, equity - already_invested)
+    budget           = deployable_cash * DEPLOY_BUFFER
+
+    print(f"Equity ${equity:.0f}  invested ${already_invested:.0f}  "
+          f"deployable ${deployable_cash:.0f}  budget ${budget:.0f}")
+
+    if budget < shared.MIN_TRADE_USD:
+        print(f"Available cash too small to deploy (${budget:.0f} < ${shared.MIN_TRADE_USD:.0f}).")
+        return
+
+    # -----------------------------------------------------------------------
+    # 6. Filter candidates: score ≥ 1, not already held
     # -----------------------------------------------------------------------
     already_held = shared.get_held_symbols(db, positions)
 
@@ -187,23 +197,22 @@ def run(db) -> None:
         and sym not in already_held
     ]
     candidates.sort(key=lambda x: x[1]["score"], reverse=True)
-    candidates = candidates[:slots]  # respect global cap
+    candidates = candidates[:slots]  # respect global 20-position cap
 
     if not candidates:
-        print("No qualifying candidates for cash deployment.")
+        print("No qualifying candidates (all held or score < 1).")
         return
 
     # -----------------------------------------------------------------------
-    # 6. Proportional allocation and order placement
+    # 7. Score-proportional allocation and order placement
     # -----------------------------------------------------------------------
-    budget = min(buying_power * MAX_DEPLOY_FRAC, shared.MAX_POSITION_USD * len(candidates))
     allocs = _proportional_allocations(candidates, budget)
 
     print(f"Deploying ${budget:.0f} across {len(candidates)} candidate(s): "
           f"{[c[0] for c in candidates]}")
 
     for sym, result in candidates:
-        usd = allocs.get(sym, 0)
+        usd = allocs.get(sym, 0.0)
         if usd < shared.MIN_TRADE_USD:
             continue
         price = result["price"]
