@@ -34,12 +34,13 @@ from intraday_attractiveness import compute_intraday_score
 SUPABASE_URL          = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_ROLE = os.environ["SUPABASE_SERVICE_ROLE"]
 
-STRATEGY         = "portfolio"
-MIN_ENTRY_SCORE  = 1      # any net-positive signal qualifies
-EXIT_SCORE_FLOOR = 0      # exit if score drops to 0 or below
-STOP_LOSS_PCT    = 0.03   # 3 % hard stop
-TAKE_PROFIT_PCT  = 0.05   # 5 % take-profit
-DEPLOY_BUFFER    = 0.95   # keep 5 % cash reserve for order execution
+STRATEGY              = "portfolio"
+MIN_ENTRY_SCORE       = 1      # any net-positive signal qualifies
+EXIT_SCORE_FLOOR      = 0      # exit if score drops to 0 or below
+STOP_LOSS_PCT         = 0.03   # 3 % hard stop
+TAKE_PROFIT_PCT       = 0.05   # 5 % take-profit
+DEPLOY_BUFFER         = 0.95   # keep 5 % cash reserve for order execution
+MIN_TARGET_POSITIONS  = 10     # fill with score-0 stocks if fewer qualify
 
 
 def _score_all_universe() -> dict[str, dict]:
@@ -87,20 +88,17 @@ def _proportional_allocations(
     budget: float,
 ) -> dict[str, float]:
     """
-    Pure score-proportional allocation — no per-stock cap.
+    Score-proportional allocation using max(score, 0.5) as the weight floor.
 
-    Each candidate receives (score / Σscores) × budget.
-    The sum of all allocations equals budget exactly.
-    Falls back to equal allocation if all scores are identical.
+    The floor ensures that score-0 fill candidates (added to hit
+    MIN_TARGET_POSITIONS) receive a meaningful share rather than zero.
+    Each candidate's weight = max(score, 0.5); weights sum to total_w.
     """
     if not candidates or budget <= 0:
         return {}
-    total_sc = sum(r["score"] for _, r in candidates)
-    if total_sc <= 0:
-        # Fallback: equal split (all scores equal or zero)
-        per = budget / len(candidates)
-        return {sym: per for sym, _ in candidates}
-    return {sym: (r["score"] / total_sc) * budget for sym, r in candidates}
+    weights  = {sym: max(r["score"], 0.5) for sym, r in candidates}
+    total_w  = sum(weights.values())
+    return {sym: (w / total_w) * budget for sym, w in weights.items()}
 
 
 def run(db) -> None:
@@ -209,20 +207,38 @@ def run(db) -> None:
 
     # -----------------------------------------------------------------------
     # 6. Filter candidates: score ≥ 1, not already held
+    #    If fewer than MIN_TARGET_POSITIONS qualify, fill from score-0 stocks
+    #    so the budget is always spread across a diversified pool.
     # -----------------------------------------------------------------------
     already_held = shared.get_held_symbols(db, positions)
 
-    candidates = [
+    primary = [
         (sym, scores[sym])
         for sym in scores
         if scores[sym]["score"] >= MIN_ENTRY_SCORE
         and sym not in already_held
     ]
-    candidates.sort(key=lambda x: x[1]["score"], reverse=True)
-    candidates = candidates[:slots]  # respect global 20-position cap
+    primary.sort(key=lambda x: x[1]["score"], reverse=True)
+
+    if len(primary) < MIN_TARGET_POSITIONS:
+        neutral = [
+            (sym, scores[sym])
+            for sym in scores
+            if scores[sym]["score"] == 0
+            and sym not in already_held
+            and sym not in {s for s, _ in primary}
+        ]
+        neutral.sort(key=lambda x: x[1]["score"], reverse=True)
+        fill_n = MIN_TARGET_POSITIONS - len(primary)
+        primary += neutral[:fill_n]
+        if neutral[:fill_n]:
+            print(f"  Filled {len(neutral[:fill_n])} score-0 stocks to reach "
+                  f"MIN_TARGET_POSITIONS={MIN_TARGET_POSITIONS}")
+
+    candidates = primary[:slots]  # respect global 20-position cap
 
     if not candidates:
-        print("No qualifying candidates (all held or score < 1).")
+        print("No qualifying candidates (all held or no scored stocks).")
         return
 
     # -----------------------------------------------------------------------

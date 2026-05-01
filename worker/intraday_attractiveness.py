@@ -18,8 +18,10 @@ Signals (each ±1):
   9.  Opening Range    — ORB to upside/downside after first 30 min
   10. Market alignment — SPY direction vs its own VWAP and momentum
   11. MACD histogram   — 12/26/9 MACD divergence direction
+  12. Relative strength — stock return vs SPY return since open
+  13. Range position   — price location within day's high–low range
 
-Score range: −8 to +11.
+Score range: −8 to +13.
   ≥ 2  → strong enough to consider for portfolio deployment
   ≥ 1  → minimum for strategy-specific entries
   < 0  → bearish intraday conditions; exit or avoid
@@ -350,6 +352,53 @@ def compute_intraday_score(
                 else:
                     signals.append({"name": "MACD", "value": f"{hist:.4f}", "contribution": 0,
                                      "description": "MACD histogram not accelerating in either direction"})
+
+    # -----------------------------------------------------------------------
+    # Signal 12: Relative strength vs SPY since session open
+    # Stocks outperforming the market are leading — more likely to continue.
+    # -----------------------------------------------------------------------
+    if market_bars and len(market_bars) >= 2 and len(bars_5min) >= 2:
+        spy_open  = float(market_bars[0]["c"])
+        spy_curr  = float(market_bars[-1]["c"])
+        stk_open  = float(bars_5min[0]["c"])
+        if spy_open > 0 and stk_open > 0 and price > 0:
+            spy_ret = (spy_curr - spy_open) / spy_open * 100
+            stk_ret = (price - stk_open) / stk_open * 100
+            rel = stk_ret - spy_ret
+            if rel >= 0.3:
+                score += 1
+                signals.append({"name": "RelStr", "value": f"+{rel:.2f}%", "contribution": 1,
+                                 "description": f"Outperforming SPY by {rel:.2f}% since open"})
+            elif rel <= -0.3:
+                score -= 1
+                signals.append({"name": "RelStr", "value": f"{rel:.2f}%", "contribution": -1,
+                                 "description": f"Underperforming SPY by {abs(rel):.2f}% since open"})
+            else:
+                signals.append({"name": "RelStr", "value": f"{rel:+.2f}%", "contribution": 0,
+                                 "description": "Tracking SPY — no relative edge"})
+
+    # -----------------------------------------------------------------------
+    # Signal 13: Intraday range position
+    # Where in today's high–low range is the price sitting?
+    # Upper 35% = bullish positioning; lower 35% = weak / avoid.
+    # -----------------------------------------------------------------------
+    if len(bars_5min) >= 6:
+        day_high = max(float(b["h"]) for b in bars_5min)
+        day_low  = min(float(b["l"]) for b in bars_5min)
+        rng = day_high - day_low
+        if rng > 0:
+            pos = (price - day_low) / rng
+            if pos >= 0.65:
+                score += 1
+                signals.append({"name": "RangePos", "value": f"{pos*100:.0f}%", "contribution": 1,
+                                 "description": "Price in upper 35% of day's range — strength"})
+            elif pos <= 0.35:
+                score -= 1
+                signals.append({"name": "RangePos", "value": f"{pos*100:.0f}%", "contribution": -1,
+                                 "description": "Price in lower 35% of day's range — weakness"})
+            else:
+                signals.append({"name": "RangePos", "value": f"{pos*100:.0f}%", "contribution": 0,
+                                 "description": "Price mid-range — neutral"})
 
     return {
         "score":       score,
