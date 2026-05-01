@@ -74,8 +74,11 @@ export default async function StocksPage() {
   const signalsBySymbol: Record<string, SymbolSignals> = {};
   let historicalChanges: Record<string, HistoricalChanges> = {};
   if (ownedSymbols.length > 0) {
-    const [barChanges, analystRes, politicianRes, ratingsRes, techRes, shortRes, insiderRes, earningsRes, socialRes, optionsRes, ecoRes] =
-      await Promise.all([
+    const [
+      barChanges, analystRes, politicianRes, ratingsRes, techRes, 
+      shortRes, insiderRes, earningsRes, socialRes, optionsRes, 
+      revisionsRes, rsRes, instRes, breadthRes, vixRes, ecoRes
+    ] = await Promise.all([
         getMultiBarChanges(ownedSymbols),
         db.from("analyst_cache").select("symbol, upside_pct").in("symbol", ownedSymbols),
         db.from("politician_trade_summary").select("symbol, buy_count, sell_count, news_sentiment, trends_direction").in("symbol", ownedSymbols),
@@ -86,6 +89,11 @@ export default async function StocksPage() {
         db.from("earnings_signals").select("symbol, beat_rate").in("symbol", ownedSymbols),
         db.from("social_sentiment").select("symbol, wsb_sentiment").in("symbol", ownedSymbols),
         db.from("options_flow").select("symbol, call_put_skew, unusual_contracts").in("symbol", ownedSymbols),
+        db.from("analyst_revisions").select("symbol, rev_ratio").in("symbol", ownedSymbols),
+        db.from("relative_strength").select("symbol, rs_3m").in("symbol", ownedSymbols),
+        db.from("institutional_conviction").select("symbol, pct_held_institutions").in("symbol", ownedSymbols),
+        db.from("market_breadth").select("*"),
+        db.from("market_volatility").select("*").eq("indicator", "VIX").single(),
         db.from("economic_indicators").select("indicator, value"),
       ]);
     historicalChanges = barChanges;
@@ -93,6 +101,9 @@ export default async function StocksPage() {
     // Extract macro indicators (global, same for all symbols)
     const fedRate = (ecoRes.data as any[])?.find(r => r.indicator === "DFF")?.value ?? null;
     const unemployment = (ecoRes.data as any[])?.find(r => r.indicator === "UNRATE")?.value ?? null;
+    const vix = (vixRes.data as any)?.value ?? null;
+    const breadthMap: Record<string, number> = {};
+    for (const b of (breadthRes.data as any[] ?? [])) breadthMap[b.exchange] = b.pct_above_sma50;
 
     for (const sym of ownedSymbols) signalsBySymbol[sym] = { changePct: changes[sym] ?? null };
 
@@ -105,10 +116,21 @@ export default async function StocksPage() {
     for (const row of earningsRes.data ?? [])   signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], eps_beat_rate: row.beat_rate };
     for (const row of socialRes.data ?? [])     signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], wsb_sentiment: row.wsb_sentiment };
     for (const row of optionsRes.data ?? [])    signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], options_skew: row.call_put_skew, options_unusual_count: row.unusual_contracts };
+    for (const row of revisionsRes.data ?? [])  signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], rev_ratio: row.rev_ratio };
+    for (const row of rsRes.data ?? [])         signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], rs_3m: row.rs_3m };
+    for (const row of instRes.data ?? [])       signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], inst_pct: row.pct_held_institutions };
 
-    // Inject macro context (same for all symbols)
+    // Inject macro context (same for all symbols or exchange-specific)
     for (const sym of ownedSymbols) {
-      signalsBySymbol[sym] = { ...signalsBySymbol[sym], fed_rate: fedRate, unemployment };
+      const h = holdings.find(h => h.symbol === sym);
+      const exchange = h?.watch?.symbol ? (h.symbol.endsWith(".DE") ? "DAX" : "Nasdaq 100") : "Nasdaq 100"; // Simple fallback
+      signalsBySymbol[sym] = { 
+        ...signalsBySymbol[sym], 
+        fed_rate: fedRate, 
+        unemployment,
+        vix,
+        breadth_50: breadthMap[exchange] ?? null
+      };
     }
   }
 

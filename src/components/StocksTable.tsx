@@ -40,6 +40,11 @@ export type SymbolSignals = {
   unemployment?: number | null;
   options_skew?: number | null;
   options_unusual_count?: number | null;
+  rev_ratio?: number | null;
+  breadth_50?: number | null;
+  rs_3m?: number | null;
+  inst_pct?: number | null;
+  vix?: number | null;
 };
 
 type Props = {

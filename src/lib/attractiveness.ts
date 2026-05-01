@@ -50,6 +50,21 @@ export interface AttractivenessSignals {
   options_skew?: number | null;      // -1.0 to +1.0 (call/put ratio)
   options_unusual_count?: number | null;
 
+  // --- signal A: analyst revisions (daily) ---
+  rev_ratio?: number | null;         // 0.0 to 1.0 (up / total)
+
+  // --- signal B: market breadth (macro, daily) ---
+  breadth_50?: number | null;        // % of index above SMA50
+
+  // --- signal C: relative strength (daily) ---
+  rs_3m?: number | null;             // relative return vs index %
+
+  // --- signal D: institutional conviction (quarterly) ---
+  inst_pct?: number | null;          // % held by institutions
+
+  // --- signal E: market volatility (macro, daily) ---
+  vix?: number | null;               // VIX level
+
   // --- macro context (FRED economic indicators, daily) ---
   fed_rate?: number | null;          // Federal Funds Rate %
   unemployment?: number | null;      // Unemployment Rate %
@@ -500,11 +515,117 @@ export function computeAttractiveness(s: AttractivenessSignals): AttractivenessR
       value: "N/A",
       contribution: 0,
       description: "No options flow data available",
-    });
-  }
+    }
+    }
 
-  // 13. Macro context (Fed rate + unemployment)
-  if (s.fed_rate != null) {
+    // 13. Signal A: Analyst Estimate Revisions
+    if (s.rev_ratio != null) {
+    if (s.rev_ratio >= 0.7) {
+      score += 1; count++;
+      reasons.push("bullish analyst revisions");
+      signals.push({
+        name: "Analyst Revisions",
+        value: `${(s.rev_ratio * 100).toFixed(0)}% Up`,
+        contribution: 1,
+        description: "Strong upward revisions to earnings estimates",
+      });
+    } else if (s.rev_ratio <= 0.3) {
+      score -= 1; count++;
+      reasons.push("bearish analyst revisions");
+      signals.push({
+        name: "Analyst Revisions",
+        value: `${(s.rev_ratio * 100).toFixed(0)}% Up`,
+        contribution: -1,
+        description: "Strong downward revisions to earnings estimates",
+      });
+    } else {
+      signals.push({
+        name: "Analyst Revisions",
+        value: `${(s.rev_ratio * 100).toFixed(0)}% Up`,
+        contribution: 0,
+        description: "Mixed or neutral earnings revisions",
+      });
+    }
+    }
+
+    // 14. Signal C: Relative Strength (Momentum Leader)
+    if (s.rs_3m != null) {
+    if (s.rs_3m > 10) {
+      score += 1; count++;
+      reasons.push("momentum leader");
+      signals.push({
+        name: "Relative Strength",
+        value: `+${s.rs_3m.toFixed(1)}%`,
+        contribution: 1,
+        description: "Outperforming benchmark by >10% over 3 months",
+      });
+    } else if (s.rs_3m < -10) {
+      score -= 1; count++;
+      reasons.push("momentum laggard");
+      signals.push({
+        name: "Relative Strength",
+        value: `${s.rs_3m.toFixed(1)}%`,
+        contribution: -1,
+        description: "Underperforming benchmark by >10% over 3 months",
+      });
+    } else {
+      signals.push({
+        name: "Relative Strength",
+        value: `${s.rs_3m.toFixed(1)}%`,
+        contribution: 0,
+        description: "Performance in line with benchmark",
+      });
+    }
+    }
+
+    // 15. Signal D: Institutional Ownership
+    if (s.inst_pct != null) {
+    if (s.inst_pct >= 0.75) {
+      score += 1; count++;
+      reasons.push("high institutional conviction");
+      signals.push({
+        name: "Inst. Ownership",
+        value: `${(s.inst_pct * 100).toFixed(0)}%`,
+        contribution: 1,
+        description: "High institutional ownership (Smart Money conviction)",
+      });
+    } else if (s.inst_pct <= 0.2) {
+      score -= 1; count++;
+      signals.push({
+        name: "Inst. Ownership",
+        value: `${(s.inst_pct * 100).toFixed(0)}%`,
+        contribution: -1,
+        description: "Low institutional support",
+      });
+    }
+    }
+
+    // 16. Macro Dampener B: Market Breadth
+    if (s.breadth_50 != null && s.breadth_50 < 0.3) {
+    score -= 1; count++;
+    reasons.push("weak market breadth");
+    signals.push({
+      name: "Market Breadth",
+      value: `${(s.breadth_50 * 100).toFixed(0)}%`,
+      contribution: -1,
+      description: "Fragile market rally (few stocks participating)",
+    });
+    }
+
+    // 17. Macro Dampener E: VIX (Extreme Fear)
+    if (s.vix != null && s.vix > 30) {
+    score -= 1; count++;
+    reasons.push("extreme market fear");
+    signals.push({
+      name: "VIX (Fear Index)",
+      value: s.vix.toFixed(1),
+      contribution: -1,
+      description: "High market volatility dampens attractiveness",
+    });
+    }
+
+    // 18. Macro context (Fed rate + unemployment)
+    if (s.fed_rate != null) {
     if (s.fed_rate >= 5) {
       score -= 1; count++;
       reasons.push("high interest rates");
