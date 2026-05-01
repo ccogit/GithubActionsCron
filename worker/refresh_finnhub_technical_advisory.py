@@ -1,11 +1,17 @@
-"""Refresh Finnhub technical advisory summary.
+"""Refresh technical advisory signal using yfinance price history.
 
-Aggregates multiple technical indicators (RSI, MACD, Moving Averages) from
-Finnhub's proprietary scanner to provide a single 'Advisory' signal.
+Replaces the Finnhub /scan/technical-indicator endpoint (paid tier).
+Computes the same five indicators used in refresh_technical_signals.py and
+maps the counts to an advisory label matching Finnhub's schema.
 
-Signal: 'Strong Buy' = +1; 'Strong Sell' = -1.
+Signal mapping:
+  buy_count >= 4 → "Strong Buy"
+  buy_count == 3 → "Buy"
+  sell_count >= 4 → "Strong Sell"
+  sell_count == 3 → "Sell"
+  otherwise       → "Neutral"
 
-Runs daily on weekdays. Respects 60 req/min free-tier limit.
+Runs daily on weekdays. No API key required.
 """
 
 import os
@@ -14,41 +20,109 @@ import time
 from datetime import datetime, timezone
 from typing import Optional
 
-import requests
+import pandas as pd
+import yfinance as yf
 from supabase import create_client
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_ROLE = os.environ["SUPABASE_SERVICE_ROLE"]
-FINNHUB_TOKEN = os.environ["FINNHUB_API_KEY"]
-
-BASE = "https://finnhub.io/api/v1"
-DELAY = 1.1  # stay under 60 req/min
 
 
-def fetch_technical_advisory(symbol: str) -> Optional[dict]:
+def _rsi(close: pd.Series, period: int = 14) -> float:
+    delta = close.diff()
+    gain = delta.clip(lower=0)
+    loss = (-delta).clip(lower=0)
+    avg_gain = gain.ewm(com=period - 1, min_periods=period).mean()
+    avg_loss = loss.ewm(com=period - 1, min_periods=period).mean()
+    rs = avg_gain / avg_loss
+    return float(100 - 100 / (1 + rs.iloc[-1]))
+
+
+def _macd_histogram(close: pd.Series) -> float:
+    ema12 = close.ewm(span=12, adjust=False).mean()
+    ema26 = close.ewm(span=26, adjust=False).mean()
+    macd = ema12 - ema26
+    signal = macd.ewm(span=9, adjust=False).mean()
+    return float((macd - signal).iloc[-1])
+
+
+def _bollinger_signal(close: pd.Series, period: int = 20) -> str:
+    sma = close.rolling(period).mean()
+    std = close.rolling(period).std()
+    upper = sma + 2 * std
+    lower = sma - 2 * std
+    price = float(close.iloc[-1])
+    if price > float(upper.iloc[-1]):
+        return "sell"
+    if price < float(lower.iloc[-1]):
+        return "buy"
+    return "neutral"
+
+
+def _obv_signal(close: pd.Series, volume: pd.Series) -> str:
+    direction = close.diff().apply(lambda x: 1 if x > 0 else -1 if x < 0 else 0)
+    obv = (volume * direction).fillna(0).cumsum()
+    obv_sma = obv.rolling(14).mean()
+    if float(obv.iloc[-1]) > float(obv_sma.iloc[-1]):
+        return "buy"
+    if float(obv.iloc[-1]) < float(obv_sma.iloc[-1]):
+        return "sell"
+    return "neutral"
+
+
+def _counts_to_advisory(buy: int, sell: int) -> str:
+    if buy >= 4:
+        return "Strong Buy"
+    if buy == 3:
+        return "Buy"
+    if sell >= 4:
+        return "Strong Sell"
+    if sell == 3:
+        return "Sell"
+    return "Neutral"
+
+
+def compute_advisory(symbol: str) -> Optional[dict]:
     try:
-        r = requests.get(
-            f"{BASE}/scan/technical-indicator",
-            params={"symbol": symbol, "token": FINNHUB_TOKEN, "resolution": "D"},
-            timeout=15,
-        )
-        if r.status_code == 429:
-            print("  Rate limit hit, sleeping...", file=sys.stderr)
-            time.sleep(10)
-            return fetch_technical_advisory(symbol)
-            
-        r.raise_for_status()
-        data = r.json()
-        
-        trend = data.get("trend")
-        if not trend:
+        hist = yf.Ticker(symbol).history(period="1y")
+        if hist.empty or len(hist) < 50:
             return None
-            
+
+        close = hist["Close"]
+        volume = hist["Volume"]
+        current = float(close.iloc[-1])
+
+        rsi = _rsi(close)
+        rsi_sig = "buy" if rsi < 40 else "sell" if rsi > 60 else "neutral"
+
+        sma50 = float(close.rolling(50).mean().iloc[-1])
+        if len(close) >= 200:
+            sma200 = float(close.rolling(200).mean().iloc[-1])
+            if current > sma50 and sma50 > sma200:
+                sma_sig = "buy"
+            elif current < sma50 and sma50 < sma200:
+                sma_sig = "sell"
+            else:
+                sma_sig = "neutral"
+        else:
+            sma_sig = "buy" if current > sma50 else "sell"
+
+        macd_hist = _macd_histogram(close)
+        macd_sig = "buy" if macd_hist > 0 else "sell"
+
+        bb_sig = _bollinger_signal(close)
+        obv_sig = _obv_signal(close, volume)
+
+        sigs = [rsi_sig, sma_sig, macd_sig, bb_sig, obv_sig]
+        buy_count = sigs.count("buy")
+        sell_count = sigs.count("sell")
+        neutral_count = sigs.count("neutral")
+
         return {
-            "advisory": trend.get("advisory"),
-            "buy_count": int(trend.get("buy", 0)),
-            "sell_count": int(trend.get("sell", 0)),
-            "neutral_count": int(trend.get("neutral", 0)),
+            "advisory": _counts_to_advisory(buy_count, sell_count),
+            "buy_count": buy_count,
+            "sell_count": sell_count,
+            "neutral_count": neutral_count,
         }
     except Exception as e:
         print(f"  {symbol}: {e}", file=sys.stderr)
@@ -66,15 +140,15 @@ def main() -> int:
         .execute()
     )
     symbols = list(dict.fromkeys(r["symbol"] for r in (res.data or [])))
-    print(f"Fetching Finnhub technical advisory for {len(symbols)} US symbols...")
+    print(f"Computing technical advisory for {len(symbols)} US symbols...")
 
     now = datetime.now(timezone.utc).isoformat()
     batch: list[dict] = []
     ok = skipped = 0
 
     for i, symbol in enumerate(symbols):
-        data = fetch_technical_advisory(symbol)
-        time.sleep(DELAY)
+        data = compute_advisory(symbol)
+        time.sleep(0.3)
 
         if data is None:
             skipped += 1

@@ -1,10 +1,12 @@
-"""Refresh Finnhub support and resistance levels.
+"""Refresh support and resistance levels using yfinance price history.
 
-Fetches pre-calculated price levels for floor (support) and ceiling (resistance).
+Replaces the Finnhub /scan/support-resistance endpoint (paid tier).
+Detects swing highs and lows from 6 months of daily OHLCV data, clusters
+nearby levels (within 1.5%), and returns the most significant ones.
 
 Signal: Safety margin. Price within 3% above major support = +1 bonus.
 
-Runs daily on weekdays. Respects 60 req/min free-tier limit.
+Runs daily on weekdays. No API key required.
 """
 
 import os
@@ -13,36 +15,58 @@ import time
 from datetime import datetime, timezone
 from typing import Optional
 
-import requests
+import numpy as np
+import pandas as pd
+import yfinance as yf
 from supabase import create_client
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_ROLE = os.environ["SUPABASE_SERVICE_ROLE"]
-FINNHUB_TOKEN = os.environ["FINNHUB_API_KEY"]
 
-BASE = "https://finnhub.io/api/v1"
-DELAY = 1.1
+WINDOW = 5          # bars each side for local extrema
+CLUSTER_PCT = 0.015 # merge levels within 1.5% of each other
+MAX_LEVELS = 8      # cap returned levels
 
 
-def fetch_support_resistance(symbol: str) -> Optional[list[float]]:
+def _find_levels(symbol: str) -> Optional[list[float]]:
     try:
-        r = requests.get(
-            f"{BASE}/scan/support-resistance",
-            params={"symbol": symbol, "token": FINNHUB_TOKEN, "resolution": "D"},
-            timeout=15,
-        )
-        if r.status_code == 429:
-            time.sleep(10)
-            return fetch_support_resistance(symbol)
-            
-        r.raise_for_status()
-        data = r.json()
-        
-        levels = data.get("levels")
-        if not levels:
+        hist = yf.Ticker(symbol).history(period="6mo")
+        if hist.empty or len(hist) < 30:
             return None
-            
-        return [float(l) for l in levels]
+
+        high = hist["High"].values
+        low = hist["Low"].values
+
+        # Local maxima and minima
+        candidates: list[float] = []
+        for i in range(WINDOW, len(hist) - WINDOW):
+            if high[i] == max(high[i - WINDOW: i + WINDOW + 1]):
+                candidates.append(float(high[i]))
+            if low[i] == min(low[i - WINDOW: i + WINDOW + 1]):
+                candidates.append(float(low[i]))
+
+        if not candidates:
+            return None
+
+        # Cluster nearby levels
+        candidates.sort()
+        clustered: list[float] = []
+        group: list[float] = [candidates[0]]
+
+        for level in candidates[1:]:
+            if level <= group[0] * (1 + CLUSTER_PCT):
+                group.append(level)
+            else:
+                clustered.append(float(np.mean(group)))
+                group = [level]
+        clustered.append(float(np.mean(group)))
+
+        # Keep levels closest to current price, capped at MAX_LEVELS
+        current = float(hist["Close"].iloc[-1])
+        clustered.sort(key=lambda x: abs(x - current))
+        result = sorted(clustered[:MAX_LEVELS])
+
+        return [round(l, 4) for l in result]
     except Exception as e:
         print(f"  {symbol}: {e}", file=sys.stderr)
         return None
@@ -59,15 +83,15 @@ def main() -> int:
         .execute()
     )
     symbols = list(dict.fromkeys(r["symbol"] for r in (res.data or [])))
-    print(f"Fetching Finnhub support/resistance for {len(symbols)} US symbols...")
+    print(f"Computing support/resistance levels for {len(symbols)} US symbols...")
 
     now = datetime.now(timezone.utc).isoformat()
     batch: list[dict] = []
     ok = skipped = 0
 
     for i, symbol in enumerate(symbols):
-        levels = fetch_support_resistance(symbol)
-        time.sleep(DELAY)
+        levels = _find_levels(symbol)
+        time.sleep(0.3)
 
         if levels is None:
             skipped += 1

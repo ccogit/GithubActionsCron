@@ -1,10 +1,11 @@
-"""Refresh Finnhub basic financial metrics.
+"""Refresh basic financial metrics using yfinance.
 
-Fetches key ratios like P/E, Dividend Yield, and 52-Week range.
+Replaces the Finnhub /stock/metric endpoint.
+Fetches P/E TTM, dividend yield, and 52-week range from yfinance ticker.info.
 
 Signal: Valuation sanity. P/E < 20 = +1; Price near 52w low = +1 (Mean Reversion).
 
-Runs weekly. Respects 60 req/min free-tier limit.
+Runs weekly. No API key required.
 """
 
 import os
@@ -13,40 +14,33 @@ import time
 from datetime import datetime, timezone
 from typing import Optional
 
-import requests
+import yfinance as yf
 from supabase import create_client
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_ROLE = os.environ["SUPABASE_SERVICE_ROLE"]
-FINNHUB_TOKEN = os.environ["FINNHUB_API_KEY"]
-
-BASE = "https://finnhub.io/api/v1"
-DELAY = 1.1
 
 
 def fetch_basic_metrics(symbol: str) -> Optional[dict]:
     try:
-        r = requests.get(
-            f"{BASE}/stock/metric",
-            params={"symbol": symbol, "token": FINNHUB_TOKEN, "metric": "all"},
-            timeout=15,
-        )
-        if r.status_code == 429:
-            time.sleep(10)
-            return fetch_basic_metrics(symbol)
-            
-        r.raise_for_status()
-        data = r.json()
-        
-        metrics = data.get("metric")
-        if not metrics:
+        info = yf.Ticker(symbol).info
+        if not info:
             return None
-            
+
+        pe = info.get("trailingPE")
+        div_yield = info.get("dividendYield")
+        high_52w = info.get("fiftyTwoWeekHigh")
+        low_52w = info.get("fiftyTwoWeekLow")
+
+        # At least one meaningful value must be present
+        if pe is None and high_52w is None and low_52w is None:
+            return None
+
         return {
-            "pe_ttm": metrics.get("peTTM"),
-            "dividend_yield": metrics.get("dividendYieldIndicatedAnnual"),
-            "high_52w": metrics.get("52WeekHigh"),
-            "low_52w": metrics.get("52WeekLow"),
+            "pe_ttm": float(pe) if pe is not None else None,
+            "dividend_yield": float(div_yield) if div_yield is not None else None,
+            "high_52w": float(high_52w) if high_52w is not None else None,
+            "low_52w": float(low_52w) if low_52w is not None else None,
         }
     except Exception as e:
         print(f"  {symbol}: {e}", file=sys.stderr)
@@ -64,7 +58,7 @@ def main() -> int:
         .execute()
     )
     symbols = list(dict.fromkeys(r["symbol"] for r in (res.data or [])))
-    print(f"Fetching Finnhub basic metrics for {len(symbols)} US symbols...")
+    print(f"Fetching basic metrics for {len(symbols)} US symbols...")
 
     now = datetime.now(timezone.utc).isoformat()
     batch: list[dict] = []
@@ -72,7 +66,7 @@ def main() -> int:
 
     for i, symbol in enumerate(symbols):
         data = fetch_basic_metrics(symbol)
-        time.sleep(DELAY)
+        time.sleep(0.4)
 
         if data is None:
             skipped += 1
@@ -82,7 +76,7 @@ def main() -> int:
         ok += 1
 
         if i % 20 == 0:
-            pe = f"P/E={data['pe_ttm']}" if data.get('pe_ttm') else "no P/E"
+            pe = f"P/E={data['pe_ttm']:.1f}" if data.get("pe_ttm") else "no P/E"
             print(f"  [{i + 1}/{len(symbols)}] {symbol}: {pe}")
 
         if len(batch) >= 50:
