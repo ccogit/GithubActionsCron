@@ -124,7 +124,9 @@ def run(db) -> None:
             continue
 
         # Intraday attractiveness pre-filter
-        attract = compute_intraday_score(intraday_map.get(sym, []), daily)
+        attract = compute_intraday_score(
+            intraday_map.get(sym, []), daily, market_bars=intraday_map.get("SPY", []),
+        )
         if not attract["enough_data"] or attract["score"] < MIN_ATTRACT_SCORE:
             continue
 

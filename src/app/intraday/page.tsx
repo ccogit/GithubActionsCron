@@ -27,13 +27,17 @@ async function fetchAccount() {
 }
 
 export default async function IntraDayPage() {
+  const hasCredentials = !!(
+    process.env.INTRADAY_ALPACA_KEY && process.env.INTRADAY_ALPACA_SECRET
+  );
+
   const db    = createClient();
   const since = new Date();
   since.setHours(0, 0, 0, 0);
 
   const [positions, account, tradesRes] = await Promise.all([
-    fetchPositions(),
-    fetchAccount(),
+    hasCredentials ? fetchPositions() : Promise.resolve([]),
+    hasCredentials ? fetchAccount()   : Promise.resolve({}),
     db
       .from("intraday_trades")
       .select("*")
@@ -52,10 +56,22 @@ export default async function IntraDayPage() {
             </h2>
             <h1 className="text-xl font-semibold text-foreground">Intraday Strategies</h1>
             <p className="text-xs text-muted-foreground mt-1">
-              Breakout · VWAP · Mean Reversion — runs every 5 min during market hours
+              Breakout · VWAP · Mean Reversion · Portfolio — runs every minute during market hours
             </p>
           </div>
         </div>
+
+        {!hasCredentials && (
+          <div className="rounded-lg border border-amber-400/30 bg-amber-400/5 px-4 py-3 text-sm">
+            <p className="font-medium text-amber-400 mb-1">Alpaca credentials not configured</p>
+            <p className="text-muted-foreground text-xs">
+              Add <code className="font-mono text-amber-300">INTRADAY_ALPACA_KEY</code> and{" "}
+              <code className="font-mono text-amber-300">INTRADAY_ALPACA_SECRET</code> as
+              environment variables to enable live positions and account data.
+              Trade history from Supabase is still shown below.
+            </p>
+          </div>
+        )}
 
         <IntraDayDashboard
           initialPositions={positions}

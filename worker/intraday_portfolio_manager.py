@@ -40,10 +40,13 @@ def _score_all_universe() -> dict[str, dict]:
         shared.UNIVERSE, timeframe="5Min", limit=78,
         start=shared.today_market_open_utc(),
     )
-    daily = shared.get_daily_bars_multi(shared.UNIVERSE, limit=22)
+    daily    = shared.get_daily_bars_multi(shared.UNIVERSE, limit=22)
+    spy_bars = intraday.get("SPY", [])
     scores: dict[str, dict] = {}
     for sym in shared.UNIVERSE:
-        result = compute_intraday_score(intraday.get(sym, []), daily.get(sym, []))
+        result = compute_intraday_score(
+            intraday.get(sym, []), daily.get(sym, []), market_bars=spy_bars,
+        )
         if result["enough_data"]:
             scores[sym] = result
     return scores
