@@ -1,23 +1,42 @@
 name: Intraday Trading
 
-# Runs every 5 minutes during US market hours (Mon–Fri).
-# Covers both EDT (13:30–20:00 UTC) and EST (14:30–21:00 UTC) sessions.
-# Each strategy script performs its own market-hours gate so off-hours runs
-# exit immediately without placing orders.
+# Runs every minute via repository_dispatch type 'tick'  (same event as the
+# price-tick worker — piggybacking on the existing cron-job.org webhook).
+#
+# Execution order per run:
+#   1. Breakout strategy   — pattern-specific entries (20d-high + volume)
+#   2. VWAP strategy       — pattern-specific entries (crossover + volume)
+#   3. Mean Reversion      — pattern-specific entries (VWAP gap + RSI oversold)
+#   4. Portfolio Manager   — deploys remaining cash to top intraday-scored stocks;
+#                            also manages exits for its own positions
+#
+# Strategies run first so they get first pick on specific patterns.
+# The portfolio manager then fills any remaining capacity with the best-
+# scoring stocks according to the intraday attractiveness model.
+#
+# All four workers use the SAME intraday attractiveness score
+# (worker/intraday_attractiveness.py) and the SAME Alpaca paper account
+# (INTRADAY_ALPACA_KEY / INTRADAY_ALPACA_SECRET).  Neither reads the main
+# portfolio's Supabase signal tables.
+#
+# Maximum simultaneous positions: 20 (enforced globally by intraday_shared.py).
 #
 # Required secrets:
 #   SUPABASE_URL, SUPABASE_SERVICE_ROLE
 #   INTRADAY_ALPACA_KEY, INTRADAY_ALPACA_SECRET
 
 on:
+  repository_dispatch:
+    types: [tick]   # fires every minute from cron-job.org
   schedule:
-    - cron: '*/5 13-21 * * 1-5'
+    - cron: '*/5 13-21 * * 1-5'   # fallback: every 5 min during market hours
   workflow_dispatch:
 
 jobs:
   trade:
     runs-on: ubuntu-latest
-    timeout-minutes: 4
+    timeout-minutes: 4   # hard kill before next tick fires
+
     steps:
       - uses: actions/checkout@v4
 
@@ -27,6 +46,8 @@ jobs:
 
       - name: Install dependencies
         run: pip install "supabase>=2.15.0"
+
+      # ── Strategy workers (pattern-specific) ──────────────────────────────
 
       - name: Breakout + Volume Confirmation
         working-directory: worker
@@ -54,3 +75,14 @@ jobs:
           INTRADAY_ALPACA_KEY: ${{ secrets.INTRADAY_ALPACA_KEY }}
           INTRADAY_ALPACA_SECRET: ${{ secrets.INTRADAY_ALPACA_SECRET }}
         run: python intraday_mean_reversion.py
+
+      # ── Portfolio manager (score-driven cash deployment) ─────────────────
+
+      - name: Portfolio Manager
+        working-directory: worker
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          INTRADAY_ALPACA_KEY: ${{ secrets.INTRADAY_ALPACA_KEY }}
+          INTRADAY_ALPACA_SECRET: ${{ secrets.INTRADAY_ALPACA_SECRET }}
+        run: python intraday_portfolio_manager.py

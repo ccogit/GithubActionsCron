@@ -1,10 +1,11 @@
 """Shared utilities for intraday trading strategies (second paper account).
 
-All three strategy workers import this module. It handles:
+All intraday workers import this module. It handles:
 - Alpaca API calls (trading + data) for the second paper account
 - Market hours detection (DST-aware via zoneinfo)
 - VWAP calculation
 - Supabase trade logging helpers
+- Global position cap (MAX_TOTAL_POSITIONS = 20)
 """
 
 import json
@@ -22,16 +23,31 @@ INTRADAY_ALPACA_SECRET = os.environ["INTRADAY_ALPACA_SECRET"]
 TRADE_BASE = "https://paper-api.alpaca.markets/v2"
 DATA_BASE  = "https://data.alpaca.markets/v2"
 
-# Liquid large-cap universe for intraday strategies
+# ---------------------------------------------------------------------------
+# Universe — liquid large-cap US equities for the intraday account.
+# Completely separate from the main portfolio's index_constituents table.
+# ---------------------------------------------------------------------------
 UNIVERSE = [
-    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA",
-    "AMD", "NFLX", "JPM", "BAC", "GS", "QQQ", "SPY",
+    # Mega-cap tech
+    "AAPL", "MSFT", "NVDA", "AMZN", "GOOGL", "META", "TSLA", "AVGO",
+    # Mid-cap tech / growth
+    "AMD", "NFLX", "PLTR", "COIN", "CRM",
+    # Financials
+    "JPM", "BAC", "GS",
+    # Consumer / industrial
+    "WMT", "HD",
+    # ETFs (high liquidity, moderate volatility)
+    "QQQ", "SPY", "IWM",
 ]
 
+# ---------------------------------------------------------------------------
+# Portfolio limits — these govern the intraday account ONLY
+# ---------------------------------------------------------------------------
+MAX_TOTAL_POSITIONS    = 20   # hard cap across all strategies
 MAX_POSITIONS_PER_STRATEGY = 3
-MAX_POSITION_PCT = 0.08    # max 8% of buying power per trade
-MAX_POSITION_USD = 2000.0  # hard cap per position
-MIN_TRADE_USD    = 200.0   # don't open positions smaller than this
+MAX_POSITION_PCT       = 0.08   # max 8% of buying power per trade
+MAX_POSITION_USD       = 2000.0
+MIN_TRADE_USD          = 200.0
 
 ET = ZoneInfo("America/New_York")
 
@@ -52,8 +68,8 @@ def is_market_open() -> bool:
 
 def today_market_open_utc() -> str:
     """ISO-8601 UTC timestamp for today's market open (9:30 AM ET)."""
-    now_et   = datetime.now(ET)
-    open_et  = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
+    now_et  = datetime.now(ET)
+    open_et = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
     return open_et.astimezone(timezone.utc).isoformat()
 
 
@@ -109,9 +125,9 @@ def place_order(symbol: str, qty: int, side: str) -> Optional[str]:
     try:
         order = _post(f"{TRADE_BASE}/orders", {
             "symbol": symbol,
-            "qty": str(qty),
-            "side": side,
-            "type": "market",
+            "qty":    str(qty),
+            "side":   side,
+            "type":   "market",
             "time_in_force": "day",
         })
         oid = order.get("id")
@@ -136,6 +152,38 @@ def close_all_positions() -> list[str]:
             if oid:
                 closed.append(sym)
     return closed
+
+
+# ---------------------------------------------------------------------------
+# Global position tracking helpers
+# ---------------------------------------------------------------------------
+
+def get_held_symbols(db, alpaca_positions: list[dict]) -> set[str]:
+    """
+    All symbols currently held or pending across ALL intraday strategies.
+
+    Combines live Alpaca positions (filled orders) with open intraday_trades
+    rows (placed but possibly not yet filled) to prevent double-buying during
+    the same minute cycle.
+    """
+    alpaca_syms: set[str] = {p["symbol"] for p in alpaca_positions}
+    try:
+        rows = (
+            db.table("intraday_trades")
+            .select("symbol")
+            .eq("status", "open")
+            .execute()
+            .data or []
+        )
+        pending_syms: set[str] = {r["symbol"] for r in rows}
+    except Exception:
+        pending_syms = set()
+    return alpaca_syms | pending_syms
+
+
+def available_slots(alpaca_positions: list[dict]) -> int:
+    """How many more positions can be opened before hitting MAX_TOTAL_POSITIONS."""
+    return max(0, MAX_TOTAL_POSITIONS - len(alpaca_positions))
 
 
 # ---------------------------------------------------------------------------
