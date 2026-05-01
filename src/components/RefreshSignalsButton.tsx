@@ -252,7 +252,7 @@ export function RefreshSignalsButton() {
       </div>
 
       {hasWorkflows && (
-        <div className="rounded-lg border border-white/10 overflow-hidden w-fit min-w-64">
+        <div className="rounded-lg border border-white/10 overflow-hidden" style={{ width: 320 }}>
           <button
             type="button"
             onClick={() => setExpanded((v) => !v)}
@@ -262,13 +262,9 @@ export function RefreshSignalsButton() {
             {expanded ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
           </button>
           {expanded && (
-            <div className="border-t border-white/10">
-              {Array.from(workflows.values()).map((wf, i, arr) => (
-                <WorkflowRow
-                  key={wf.workflow}
-                  entry={wf}
-                  borderBottom={i < arr.length - 1}
-                />
+            <div className="border-t border-white/10 p-2 grid grid-cols-2 gap-1">
+              {Array.from(workflows.values()).map((wf) => (
+                <WorkflowCard key={wf.workflow} entry={wf} />
               ))}
             </div>
           )}
@@ -278,46 +274,63 @@ export function RefreshSignalsButton() {
   );
 }
 
-function WorkflowRow({ entry, borderBottom }: { entry: WorkflowEntry; borderBottom: boolean }) {
+function WorkflowCard({ entry }: { entry: WorkflowEntry }) {
   const { name, runState, dispatchError, stepsDone, stepsTotal } = entry;
   const isActive = runState === 'queued' || runState === 'running';
 
-  const dotClass =
-    runState === 'completed' ? 'bg-green-400' :
-    runState === 'failed'    ? 'bg-red-400' :
+  const pct =
+    isActive && stepsTotal != null && stepsTotal > 0
+      ? Math.round(((stepsDone ?? 0) / stepsTotal!) * 100)
+      : null;
+
+  const label =
+    dispatchError          ? '!'       :
+    runState === 'queued'  ? 'queued'  :
+    runState === 'running' ? (pct != null ? `${pct}%` : '…') :
+    runState === 'completed' ? 'done'  : 'failed';
+
+  const border =
+    runState === 'completed' ? 'border-green-500/20'  :
+    runState === 'failed'    ? 'border-red-500/20'    :
+                               'border-amber-500/20';
+
+  const bg =
+    runState === 'completed' ? 'bg-green-500/5'  :
+    runState === 'failed'    ? 'bg-red-500/5'    :
+                               'bg-amber-500/5';
+
+  const dotColor =
+    runState === 'completed' ? 'bg-green-400'           :
+    runState === 'failed'    ? 'bg-red-400'             :
                                'bg-amber-400 animate-pulse';
 
-  const labelClass =
-    runState === 'completed' ? 'text-green-400/70' :
-    runState === 'failed'    ? 'text-red-400/70' :
-                               'text-amber-400/70';
-
-  const hasPct = isActive && stepsTotal != null && stepsTotal > 0;
-  const pct = hasPct ? Math.round(((stepsDone ?? 0) / stepsTotal!) * 100) : null;
-
-  const label = dispatchError  ? 'dispatch failed' :
-    runState === 'queued'      ? 'queued' :
-    runState === 'running'     ? (pct != null ? `${pct}%` : 'running') :
-    runState === 'completed'   ? 'done' :
-                                 'failed';
+  const labelColor =
+    runState === 'completed' ? 'text-green-400/80'  :
+    runState === 'failed'    ? 'text-red-400/80'    :
+                               'text-amber-400/80';
 
   return (
-    <div className={`px-3 py-1.5 bg-white/[0.02] ${borderBottom ? 'border-b border-white/5' : ''}`}>
-      <div className="flex items-center gap-2">
-        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotClass}`} />
-        <span className="text-[11px] flex-1 pr-3">{name}</span>
-        <span className={`text-[10px] font-mono tabular-nums ${labelClass}`}>{label}</span>
+    <div
+      className={`relative rounded border ${border} ${bg} px-2 py-1.5 overflow-hidden`}
+      title={name}
+    >
+      <div className="flex items-center gap-1.5">
+        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
+        <span className="text-[10px] flex-1 truncate leading-tight">{name}</span>
+        <span className={`text-[9px] font-mono tabular-nums shrink-0 ml-1 ${labelColor}`}>
+          {label}
+        </span>
       </div>
       {isActive && (
-        <div className="mt-1 ml-3.5 h-px rounded-full bg-white/10 overflow-hidden">
+        <div className="absolute bottom-0 left-0 right-0 h-[2px] bg-white/10">
           {pct != null ? (
             <div
-              className="h-full rounded-full bg-amber-400/60 transition-all duration-500"
+              className="h-full bg-amber-400/60 transition-all duration-500"
               style={{ width: `${pct}%` }}
             />
           ) : (
             <div
-              className="h-full w-2/5 rounded-full bg-amber-400/50"
+              className="h-full w-2/5 bg-amber-400/50"
               style={{ animation: 'indeterminate 1.5s ease-in-out infinite' }}
             />
           )}
