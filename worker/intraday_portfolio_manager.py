@@ -177,7 +177,62 @@ def run(db) -> None:
             )
             closed_ids.add(trade["id"])
 
-    # Refresh positions after exits
+    # -----------------------------------------------------------------------
+    # 3b. Exit check — daily baseline positions (stop/target monitoring)
+    #     The daily_baseline strategy holds positions all day; this block
+    #     enforces their stop-loss and take-profit every minute.
+    # -----------------------------------------------------------------------
+    baseline_trades: list[dict] = (
+        db.table("intraday_trades")
+        .select("*")
+        .eq("strategy", "daily_baseline")
+        .eq("status", "open")
+        .execute()
+        .data or []
+    )
+    for trade in baseline_trades:
+        sym = trade["symbol"]
+        pos = position_map.get(sym)
+        if pos is None:
+            continue
+
+        current_price = float(pos["current_price"])
+        entry_price   = float(trade["entry_price"])
+        stop_loss     = float(trade["stop_loss"])
+        take_profit   = float(trade["take_profit"])
+        qty           = int(trade["qty"])
+        unr_plpc      = float(pos.get("unrealized_plpc", 0) or 0)
+
+        exit_reason = exit_status = None
+        if unr_plpc <= -STOP_LOSS_PCT:
+            exit_status = "stopped"
+            exit_reason = f"Baseline stop loss: {unr_plpc*100:.1f}%"
+        elif unr_plpc >= TAKE_PROFIT_PCT:
+            exit_status = "closed"
+            exit_reason = f"Baseline take profit: {unr_plpc*100:.1f}%"
+        elif current_price <= stop_loss:
+            exit_status = "stopped"
+            exit_reason = f"Price ${current_price:.2f} ≤ stop ${stop_loss:.2f}"
+        elif current_price >= take_profit:
+            exit_status = "closed"
+            exit_reason = f"Price ${current_price:.2f} ≥ target ${take_profit:.2f}"
+
+        if exit_reason:
+            print(f"  [baseline {exit_status}] {sym}: {exit_reason}")
+            oid = shared.place_order(sym, qty, "sell")
+            shared.log_trade_close(
+                db,
+                trade_id=int(trade["id"]),
+                qty=qty,
+                entry_price=entry_price,
+                exit_price=current_price,
+                exit_order_id=oid,
+                status=exit_status,
+                notes=exit_reason,
+            )
+            closed_ids.add(trade["id"])
+
+    # Refresh positions after all exits (portfolio + baseline)
     positions    = shared.get_positions()
     position_map = {p["symbol"]: p for p in positions}
 
@@ -221,19 +276,24 @@ def run(db) -> None:
     primary.sort(key=lambda x: x[1]["score"], reverse=True)
 
     if len(primary) < MIN_TARGET_POSITIONS:
-        neutral = [
+        primary_syms = {s for s, _ in primary}
+        # Fill from best-scoring stocks below threshold (score -1, -2 …)
+        # so the remaining 30 % of capital always has a diversified home.
+        fill_pool = [
             (sym, scores[sym])
             for sym in scores
-            if scores[sym]["score"] == 0
+            if scores[sym]["score"] < MIN_ENTRY_SCORE
             and sym not in already_held
-            and sym not in {s for s, _ in primary}
+            and sym not in primary_syms
         ]
-        neutral.sort(key=lambda x: x[1]["score"], reverse=True)
+        fill_pool.sort(key=lambda x: x[1]["score"], reverse=True)
         fill_n = MIN_TARGET_POSITIONS - len(primary)
-        primary += neutral[:fill_n]
-        if neutral[:fill_n]:
-            print(f"  Filled {len(neutral[:fill_n])} score-0 stocks to reach "
-                  f"MIN_TARGET_POSITIONS={MIN_TARGET_POSITIONS}")
+        fills  = fill_pool[:fill_n]
+        primary += fills
+        if fills:
+            print(f"  Filled {len(fills)} below-threshold stocks to reach "
+                  f"MIN_TARGET_POSITIONS={MIN_TARGET_POSITIONS}: "
+                  f"{[s for s, _ in fills]}")
 
     candidates = primary[:slots]  # respect global 20-position cap
 

@@ -1,0 +1,45 @@
+name: Intraday Daily Open
+
+# Opens the day's baseline portfolio at ~9:35 AM ET, after the opening bell.
+# Uses daily fundamental/technical signals from Supabase to pick the top 10
+# universe stocks, then opens proportional positions for the day.
+#
+# Two schedule entries cover both EDT and EST:
+#   13:35 UTC = 9:35 AM EDT  (summer, UTC-4)
+#   14:35 UTC = 9:35 AM EST  (winter, UTC-5)
+#
+# The worker is idempotent — it exits immediately if today's baseline is
+# already open, so double-firing from both crons is harmless.
+#
+# Required secrets:
+#   SUPABASE_URL, SUPABASE_SERVICE_ROLE
+#   INTRADAY_ALPACA_KEY, INTRADAY_ALPACA_SECRET
+
+on:
+  schedule:
+    - cron: '35 13 * * 1-5'   # 9:35 AM EDT (summer)
+    - cron: '35 14 * * 1-5'   # 9:35 AM EST (winter)
+  workflow_dispatch:
+
+jobs:
+  open:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: pip install "supabase>=2.15.0"
+
+      - name: Open daily baseline portfolio
+        working-directory: worker
+        env:
+          SUPABASE_URL:           ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE:  ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          INTRADAY_ALPACA_KEY:    ${{ secrets.INTRADAY_ALPACA_KEY }}
+          INTRADAY_ALPACA_SECRET: ${{ secrets.INTRADAY_ALPACA_SECRET }}
+        run: python intraday_daily_rebalance.py
