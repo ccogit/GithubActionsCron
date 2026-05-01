@@ -2,7 +2,7 @@
 create table if not exists intraday_trades (
   id               bigserial primary key,
   symbol           text not null,
-  strategy         text not null,          -- 'breakout', 'vwap', 'mean_reversion'
+  strategy         text not null,          -- 'breakout', 'vwap', 'mean_reversion', 'portfolio'
   qty              integer not null,
   entry_price      numeric(12, 4),
   exit_price       numeric(12, 4),
