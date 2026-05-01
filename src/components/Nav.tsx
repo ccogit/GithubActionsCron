@@ -8,6 +8,7 @@ const LINKS = [
   { href: "/", label: "Dashboard" },
   { href: "/watchlist", label: "Stocks" },
   { href: "/orders", label: "Orders" },
+  { href: "/intraday", label: "Intraday" },
 ];
 
 export function Nav({ email }: { email?: string }) {

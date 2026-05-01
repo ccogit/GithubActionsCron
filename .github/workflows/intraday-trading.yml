@@ -1,0 +1,56 @@
+name: Intraday Trading
+
+# Runs every 5 minutes during US market hours (Mon–Fri).
+# Covers both EDT (13:30–20:00 UTC) and EST (14:30–21:00 UTC) sessions.
+# Each strategy script performs its own market-hours gate so off-hours runs
+# exit immediately without placing orders.
+#
+# Required secrets:
+#   SUPABASE_URL, SUPABASE_SERVICE_ROLE
+#   INTRADAY_ALPACA_KEY, INTRADAY_ALPACA_SECRET
+
+on:
+  schedule:
+    - cron: '*/5 13-21 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  trade:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: pip install "supabase>=2.15.0"
+
+      - name: Breakout + Volume Confirmation
+        working-directory: worker
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          INTRADAY_ALPACA_KEY: ${{ secrets.INTRADAY_ALPACA_KEY }}
+          INTRADAY_ALPACA_SECRET: ${{ secrets.INTRADAY_ALPACA_SECRET }}
+        run: python intraday_breakout.py
+
+      - name: VWAP Strategy
+        working-directory: worker
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          INTRADAY_ALPACA_KEY: ${{ secrets.INTRADAY_ALPACA_KEY }}
+          INTRADAY_ALPACA_SECRET: ${{ secrets.INTRADAY_ALPACA_SECRET }}
+        run: python intraday_vwap.py
+
+      - name: Mean Reversion
+        working-directory: worker
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          INTRADAY_ALPACA_KEY: ${{ secrets.INTRADAY_ALPACA_KEY }}
+          INTRADAY_ALPACA_SECRET: ${{ secrets.INTRADAY_ALPACA_SECRET }}
+        run: python intraday_mean_reversion.py

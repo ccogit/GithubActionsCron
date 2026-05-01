@@ -1,0 +1,39 @@
+name: Intraday EOD Cleanup
+
+# Closes all open intraday positions after US market close.
+# Two schedule entries to cover both EDT (UTC-4) and EST (UTC-5):
+#   20:05 UTC = 4:05 PM EDT  (summer)
+#   21:05 UTC = 4:05 PM EST  (winter)
+#
+# Required secrets:
+#   SUPABASE_URL, SUPABASE_SERVICE_ROLE
+#   INTRADAY_ALPACA_KEY, INTRADAY_ALPACA_SECRET
+
+on:
+  schedule:
+    - cron: '5 20 * * 1-5'   # 4:05 PM EDT
+    - cron: '5 21 * * 1-5'   # 4:05 PM EST
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install dependencies
+        run: pip install "supabase>=2.15.0"
+
+      - name: Close all intraday positions
+        working-directory: worker
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          INTRADAY_ALPACA_KEY: ${{ secrets.INTRADAY_ALPACA_KEY }}
+          INTRADAY_ALPACA_SECRET: ${{ secrets.INTRADAY_ALPACA_SECRET }}
+        run: python intraday_eod_cleanup.py
