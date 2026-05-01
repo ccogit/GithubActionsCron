@@ -13,6 +13,14 @@ type Range = "1D" | "1W" | "1Y" | "MAX";
 
 const RANGES: Range[] = ["1D", "1W", "1Y", "MAX"];
 
+// How often to silently poll per range (null = no polling)
+const POLL_MS: Record<Range, number | null> = {
+  "1D":  60_000,   // 1 min — 5Min bars update frequently
+  "1W":  300_000,  // 5 min — 1H bars
+  "1Y":  null,
+  "MAX": null,
+};
+
 const TICK_FORMAT: Record<Range, (ts: number) => string> = {
   "1D":  (ts) => format(ts, "HH:mm"),
   "1W":  (ts) => format(ts, "EEE HH:mm"),
@@ -36,6 +44,7 @@ export function BudgetHistoryWidget() {
   const [currentEquity, setCurrentEquity] = useState(0);
   const [loading, setLoading] = useState(true);
 
+  // Initial load with spinner on range change
   useEffect(() => {
     setLoading(true);
     fetch(`/api/portfolio-history?range=${range}`)
@@ -47,6 +56,23 @@ export function BudgetHistoryWidget() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
+  }, [range]);
+
+  // Silent background polling — updates chart and equity without a loading flash
+  useEffect(() => {
+    const ms = POLL_MS[range];
+    if (!ms) return;
+    const id = setInterval(() => {
+      fetch(`/api/portfolio-history?range=${range}`)
+        .then((r) => r.json())
+        .then(({ points, baseValue, currentEquity }) => {
+          setPoints(points ?? []);
+          setBaseValue(baseValue ?? 0);
+          if (currentEquity) setCurrentEquity(currentEquity);
+        })
+        .catch(() => {});
+    }, ms);
+    return () => clearInterval(id);
   }, [range]);
 
   // currentEquity is the live account value — consistent regardless of chart range.

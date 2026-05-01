@@ -1,9 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { TrendingUp, TrendingDown } from "lucide-react";
 import { PriceChart } from "@/components/PriceChart";
+import { createClient } from "@supabase/supabase-js";
 import type { PriceTick } from "@/lib/types";
+
+const SUPABASE_URL      = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
 const PERIODS = ["1D", "1W", "1M", "3M"] as const;
 type Period = (typeof PERIODS)[number];
@@ -36,16 +40,36 @@ export function StockChartPanel({
   const [ticks, setTicks] = useState<PriceTick[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    setLoading(true);
+  const fetchBars = useCallback((showLoading = false) => {
+    if (showLoading) setLoading(true);
     fetch(`/api/stock-bars?symbol=${symbol}&period=${period}`)
       .then((r) => r.json())
-      .then((data) => {
-        setTicks(barsToTicks(data.bars ?? []));
-      })
-      .catch(() => setTicks([]))
-      .finally(() => setLoading(false));
-  }, [period, symbol]);
+      .then((data) => setTicks(barsToTicks(data.bars ?? [])))
+      .catch(() => { if (showLoading) setTicks([]); })
+      .finally(() => { if (showLoading) setLoading(false); });
+  }, [symbol, period]);
+
+  // Load on period / symbol change
+  useEffect(() => { fetchBars(true); }, [fetchBars]);
+
+  // Subscribe to price_ticks for this symbol — silently refresh bars when Alpaca data is pushed.
+  // Only active on 1D (5-min bars); coarser periods don't need sub-minute updates.
+  useEffect(() => {
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY || period !== "1D") return;
+
+    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const channel = supabase
+      .channel(`stock_bars_rt_${symbol}`)
+      .on("postgres_changes", {
+        event: "INSERT",
+        schema: "public",
+        table: "price_ticks",
+        filter: `symbol=eq.${symbol}`,
+      }, () => fetchBars())
+      .subscribe();
+
+    return () => { supabase.removeChannel(channel); };
+  }, [symbol, period, fetchBars]);
 
   const prices = ticks.map((t) => t.price);
   const first = prices[0];
