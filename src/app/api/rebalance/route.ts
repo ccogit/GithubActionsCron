@@ -18,6 +18,8 @@ const DEFAULT_CONFIG: RebalanceConfig = {
   minBuyScore: 1,
   maxIterations: 5,
   minTradeUsd: 50,
+  minBuysForDeployment: 3,
+  maxSingleAllocationPct: 0.40,
 };
 
 const ALPACA_ENDPOINT = process.env.ALPACA_ENDPOINT ?? "https://paper-api.alpaca.markets/v2";
@@ -64,15 +66,28 @@ interface PlanBundle {
   scoreDetails: Record<string, AttractivenessResult>;
 }
 
+async function getAccountCash(): Promise<number> {
+  try {
+    const res = await fetch(`${ALPACA_ENDPOINT}/account`, { headers: alpacaHeaders() });
+    if (!res.ok) return 0;
+    const data = await res.json();
+    // `cash` is settled cash; `buying_power` includes margin — use cash for safety
+    return Math.max(0, parseFloat(data.cash ?? "0") || 0);
+  } catch {
+    return 0;
+  }
+}
+
 async function buildPlan(config: RebalanceConfig): Promise<PlanBundle> {
   const db = createClient();
 
   // Fetch all signal data in parallel. If any upstream workflow fails (e.g., politician trades
   // hits API rate limits), its table won't be updated but will retain cached data from the
   // last successful run. Attractiveness calculation proceeds with whatever signals are available.
-  const [positions, constituentsRes, analystRes, politicianRes, ratingsRes, techRes, shortRes, insiderRes, earningsRes, socialRes, macroRes] =
+  const [positions, availableCash, constituentsRes, analystRes, politicianRes, ratingsRes, techRes, shortRes, insiderRes, earningsRes, socialRes, macroRes] =
     await Promise.all([
       getPositions(),
+      getAccountCash(),
       db.from("index_constituents").select("symbol, name, exchange, exchange_type").eq("active", true),
       db.from("analyst_cache").select("symbol, upside_pct"),
       db.from("politician_trade_summary").select("symbol, buy_count, sell_count, news_sentiment, trends_direction"),
@@ -169,7 +184,10 @@ async function buildPlan(config: RebalanceConfig): Promise<PlanBundle> {
       score: scoreMap.get(q.symbol) ?? 0,
     }));
 
-  const plan = planRebalance(portfolioPositions, positionScores, universe, config);
+  const plan = planRebalance(portfolioPositions, positionScores, universe, {
+    ...config,
+    availableCash,
+  });
 
   // Convert scoreDetailsMap to plain object for JSON serialization
   const scoreDetails: Record<string, AttractivenessResult> = {};
@@ -195,10 +213,12 @@ function parseConfig(source: Record<string, string | undefined> | URLSearchParam
     return source[k] ?? null;
   };
   return {
-    threshold: numOr(get("threshold"), DEFAULT_CONFIG.threshold),
-    minBuyScore: numOr(get("minBuyScore"), DEFAULT_CONFIG.minBuyScore),
-    maxIterations: Math.max(1, Math.min(20, intOr(get("maxIterations"), DEFAULT_CONFIG.maxIterations))),
-    minTradeUsd: numOr(get("minTradeUsd"), DEFAULT_CONFIG.minTradeUsd),
+    threshold:              numOr(get("threshold"),              DEFAULT_CONFIG.threshold),
+    minBuyScore:            numOr(get("minBuyScore"),            DEFAULT_CONFIG.minBuyScore),
+    maxIterations:          Math.max(1, Math.min(20, intOr(get("maxIterations"), DEFAULT_CONFIG.maxIterations))),
+    minTradeUsd:            numOr(get("minTradeUsd"),            DEFAULT_CONFIG.minTradeUsd),
+    minBuysForDeployment:   intOr(get("minBuysForDeployment"),   DEFAULT_CONFIG.minBuysForDeployment!),
+    maxSingleAllocationPct: numOr(get("maxSingleAllocationPct"), DEFAULT_CONFIG.maxSingleAllocationPct!),
   };
 }
 
@@ -271,7 +291,7 @@ export async function POST(request: NextRequest) {
     // Step 2: recompute the plan server-side — never trust a client-supplied list
     const { plan, summary } = await buildPlan(config);
 
-    if (plan.swaps.length === 0) {
+    if (plan.swaps.length === 0 && plan.buys.length === 0) {
       return NextResponse.json({ canceled, executed: [], plan, summary });
     }
 
@@ -283,10 +303,21 @@ export async function POST(request: NextRequest) {
     }
 
     // Brief pause so sells register before buys hit
-    await new Promise((r) => setTimeout(r, 1000));
+    if (plan.swaps.length > 0) {
+      await new Promise((r) => setTimeout(r, 1000));
+    }
 
+    // Swap buys
     for (const swap of plan.swaps) {
       executed.push(await placeOrder(swap.buy.symbol, swap.buy.qty, "buy"));
+    }
+
+    // Fresh budget buys (run after swap buys to avoid competing for the same cash)
+    if (plan.buys.length > 0) {
+      await new Promise((r) => setTimeout(r, 500));
+      for (const buy of plan.buys) {
+        executed.push(await placeOrder(buy.symbol, buy.qty, "buy"));
+      }
     }
 
     return NextResponse.json({ canceled, executed, plan, summary });
