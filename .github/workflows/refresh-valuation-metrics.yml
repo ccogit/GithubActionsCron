@@ -1,4 +1,4 @@
-name: Refresh Finnhub Metrics
+name: Refresh Valuation Metrics
 
 on:
   schedule:

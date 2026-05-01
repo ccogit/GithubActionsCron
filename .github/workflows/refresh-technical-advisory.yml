@@ -1,4 +1,4 @@
-name: Refresh Finnhub Technical Advisory
+name: Refresh Technical Advisory
 
 on:
   schedule:
