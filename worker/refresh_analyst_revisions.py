@@ -24,28 +24,27 @@ SUPABASE_SERVICE_ROLE = os.environ["SUPABASE_SERVICE_ROLE"]
 def get_analyst_revisions(symbol: str) -> Optional[dict]:
     try:
         ticker = yf.Ticker(symbol)
-        # ticker.earnings_revisions is a DataFrame if available
-        df = ticker.earnings_revisions
+        # eps_revisions returns a DataFrame with camelCase index labels
+        df = ticker.eps_revisions
         if df is None or df.empty:
             return None
 
-        # Structure is usually:
-        #                     0Q    +1Q     0Y    +1Y
-        # Up Last 7 Days      ...
-        # Up Last 30 Days     ...
-        # Down Last 7 Days    ...
-        # Down Last 30 Days   ...
+        # Structure:
+        #                0q    +1q    0y    +1y
+        # upLast7days    ...
+        # upLast30days   ...
+        # downLast7days  ...
+        # downLast30days ...
 
-        # We focus on the current quarter (0Q) or the first column
         col = df.columns[0]
-        
+
         up_30 = 0
         down_30 = 0
-        
-        if "Up Last 30 Days" in df.index:
-            up_30 = int(df.loc["Up Last 30 Days", col])
-        if "Down Last 30 Days" in df.index:
-            down_30 = int(df.loc["Down Last 30 Days", col])
+
+        if "upLast30days" in df.index:
+            up_30 = int(df.loc["upLast30days", col])
+        if "downLast30days" in df.index:
+            down_30 = int(df.loc["downLast30days", col])
 
         total = up_30 + down_30
         ratio = up_30 / total if total > 0 else 0.5
