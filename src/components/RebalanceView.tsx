@@ -10,16 +10,28 @@ import {
   Eye,
   Info,
   XCircle,
+  TrendingUp,
 } from 'lucide-react';
 
 interface PlannedSwap {
   sell: { symbol: string; qty: number; price: number; value: number; score: number };
-  buy: { symbol: string; qty: number; price: number; value: number; score: number };
+  buy:  { symbol: string; qty: number; price: number; value: number; score: number };
   scoreDelta: number;
+}
+
+interface PlannedBuy {
+  symbol: string;
+  qty: number;
+  price: number;
+  value: number;
+  score: number;
+  allocationPct: number;
 }
 
 interface RebalancePlan {
   swaps: PlannedSwap[];
+  buys: PlannedBuy[];
+  deployedBudget: number;
   totalValueBefore: number;
   totalValueAfter: number;
   iterations: number;
@@ -81,19 +93,15 @@ export function RebalanceView() {
     setResult(null);
     try {
       const params = new URLSearchParams({
-        threshold: String(config.threshold),
-        minBuyScore: String(config.minBuyScore),
-        maxIterations: String(config.maxIterations),
-        minTradeUsd: String(config.minTradeUsd),
+        threshold:      String(config.threshold),
+        minBuyScore:    String(config.minBuyScore),
+        maxIterations:  String(config.maxIterations),
+        minTradeUsd:    String(config.minTradeUsd),
       });
       const res = await fetch(`/api/rebalance?${params}`);
       const data = await res.json();
-      if (data.error) {
-        setError(data.error);
-        setPreview(null);
-      } else {
-        setPreview(data);
-      }
+      if (data.error) { setError(data.error); setPreview(null); }
+      else             { setPreview(data); }
     } catch (e) {
       setError(String(e));
     } finally {
@@ -132,46 +140,22 @@ export function RebalanceView() {
       <div className="text-xs text-muted-foreground leading-relaxed flex items-start gap-2">
         <Info className="w-3.5 h-3.5 mt-0.5 shrink-0 text-muted-foreground/60" />
         <span>
-          Sells the lowest-scored holding and buys the highest-scored non-held US stock,
-          but only when the score improvement justifies the trade. Universe restricted to
+          Swaps the lowest-scored holding for the best-scoring alternative when the improvement
+          justifies the trade, and deploys available cash into the top-scoring stocks — spread
+          across at least 3 positions to limit concentration risk. Universe restricted to
           Alpaca-tradable equities.
         </span>
       </div>
 
       {/* Config */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-        <ConfigField
-          label="Threshold"
-          value={config.threshold}
-          onChange={(v) => setConfig({ ...config, threshold: v })}
-          step={0.5}
-          hint="min score Δ"
-        />
-        <ConfigField
-          label="Min buy score"
-          value={config.minBuyScore}
-          onChange={(v) => setConfig({ ...config, minBuyScore: v })}
-          step={1}
-          hint="reject buys below"
-        />
-        <ConfigField
-          label="Max swaps"
-          value={config.maxIterations}
-          onChange={(v) => setConfig({ ...config, maxIterations: v })}
-          step={1}
-          hint="per run"
-          integer
-        />
-        <ConfigField
-          label="Min trade $"
-          value={config.minTradeUsd}
-          onChange={(v) => setConfig({ ...config, minTradeUsd: v })}
-          step={10}
-          hint="USD"
-        />
+        <ConfigField label="Threshold"     value={config.threshold}     onChange={(v) => setConfig({ ...config, threshold: v })}     step={0.5} hint="min score Δ" />
+        <ConfigField label="Min buy score" value={config.minBuyScore}   onChange={(v) => setConfig({ ...config, minBuyScore: v })}   step={1}   hint="reject buys below" />
+        <ConfigField label="Max swaps"     value={config.maxIterations} onChange={(v) => setConfig({ ...config, maxIterations: v })} step={1}   hint="per run" integer />
+        <ConfigField label="Min trade $"   value={config.minTradeUsd}   onChange={(v) => setConfig({ ...config, minTradeUsd: v })}   step={10}  hint="USD" />
       </div>
 
-      {/* Actions — preview is informational; Run rebalance acts immediately. */}
+      {/* Actions */}
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -179,11 +163,7 @@ export function RebalanceView() {
           disabled={previewing || executing}
           className="h-8 px-3 rounded-md flex items-center gap-1.5 text-xs font-medium text-foreground bg-white/5 hover:bg-white/10 border border-white/10 transition-colors disabled:opacity-50"
         >
-          {previewing ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          ) : (
-            <Eye className="w-3.5 h-3.5" />
-          )}
+          {previewing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Eye className="w-3.5 h-3.5" />}
           {preview ? 'Refresh preview' : 'Preview rebalance'}
         </button>
 
@@ -193,16 +173,11 @@ export function RebalanceView() {
           disabled={executing || previewing}
           className="h-8 px-3 rounded-md flex items-center gap-1.5 text-xs font-medium text-blue-400 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 transition-colors disabled:opacity-50"
         >
-          {executing ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin" />
-          ) : (
-            <Play className="w-3.5 h-3.5" />
-          )}
+          {executing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
           Run rebalance now
         </button>
       </div>
 
-      {/* Error */}
       {error && (
         <div className="border border-red-500/30 bg-red-500/10 text-red-300 text-xs rounded-lg p-3 flex items-start gap-2">
           <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
@@ -210,37 +185,25 @@ export function RebalanceView() {
         </div>
       )}
 
-      {/* Execution result */}
-      {result && <ExecutionResult result={result} />}
-
-      {/* Preview */}
+      {result  && <ExecutionResult result={result} />}
       {preview && !result && <PreviewBlock data={preview} />}
     </div>
   );
 }
 
+// ---------------------------------------------------------------------------
+
 function ConfigField({
-  label,
-  value,
-  onChange,
-  step,
-  hint,
-  integer,
+  label, value, onChange, step, hint, integer,
 }: {
-  label: string;
-  value: number;
-  onChange: (v: number) => void;
-  step: number;
-  hint: string;
-  integer?: boolean;
+  label: string; value: number; onChange: (v: number) => void;
+  step: number; hint: string; integer?: boolean;
 }) {
   return (
     <label className="block">
       <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">
         {label}
-        <span className="text-muted-foreground/60 normal-case ml-1.5 tracking-normal">
-          {hint}
-        </span>
+        <span className="text-muted-foreground/60 normal-case ml-1.5 tracking-normal">{hint}</span>
       </div>
       <input
         type="number"
@@ -256,21 +219,42 @@ function ConfigField({
   );
 }
 
+// ---------------------------------------------------------------------------
+
+function SectionHeader({ label, count, accent }: { label: string; count: number; accent: string }) {
+  return (
+    <div className="flex items-center gap-2.5 py-1">
+      <span className={`text-[10px] uppercase tracking-widest font-semibold ${accent}`}>{label}</span>
+      <span className={`text-[10px] font-mono ${accent} opacity-60`}>{count}</span>
+      <div className="flex-1 h-px bg-white/8" />
+    </div>
+  );
+}
+
 function PreviewBlock({ data }: { data: PreviewResponse }) {
   const { plan, summary } = data;
+  const hasSwaps = plan.swaps.length > 0;
+  const hasBuys  = plan.buys.length > 0;
+  const hasAnything = hasSwaps || hasBuys;
 
   return (
     <div className="space-y-3">
+      {/* Stats row */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
         <span>Holdings: <span className="text-foreground font-mono">{summary.heldStocks}</span></span>
         <span>Universe: <span className="text-foreground font-mono">{summary.universeSize}</span></span>
         <span>Iterations: <span className="text-foreground font-mono">{plan.iterations}</span></span>
         <span>Portfolio value: <span className="text-foreground font-mono">${plan.totalValueBefore.toFixed(0)}</span></span>
+        {plan.deployedBudget > 0 && (
+          <span className="text-green-400/80">
+            Deploying: <span className="font-mono">${plan.deployedBudget.toFixed(0)}</span>
+          </span>
+        )}
       </div>
 
-      {plan.swaps.length === 0 ? (
+      {!hasAnything ? (
         <div className="text-sm text-muted-foreground border border-white/10 rounded-lg p-4">
-          No swaps justify the threshold.
+          Nothing to do — no swaps justify the threshold and no qualifying cash deployment.
           {plan.skipped.length > 0 && (
             <ul className="mt-2 text-xs space-y-0.5 text-muted-foreground/70">
               {plan.skipped.map((s, i) => (
@@ -280,12 +264,37 @@ function PreviewBlock({ data }: { data: PreviewResponse }) {
           )}
         </div>
       ) : (
-        <div className="space-y-2">
-          {plan.swaps.map((swap, i) => (
-            <SwapRow key={i} swap={swap} index={i + 1} />
-          ))}
+        <div className="space-y-1">
+          {/* ── Swaps section ── */}
+          {hasSwaps && (
+            <>
+              <SectionHeader label="Portfolio Swaps" count={plan.swaps.length} accent="text-muted-foreground/70" />
+              <div className="space-y-2">
+                {plan.swaps.map((swap, i) => (
+                  <SwapRow key={i} swap={swap} index={i + 1} />
+                ))}
+              </div>
+            </>
+          )}
+
+          {/* ── New positions section ── */}
+          {hasBuys && (
+            <div className={hasSwaps ? 'mt-4' : ''}>
+              <SectionHeader label="New Positions" count={plan.buys.length} accent="text-green-400/70" />
+              <div className="space-y-2 mt-1">
+                {plan.buys.map((buy, i) => (
+                  <BuyRow key={i} buy={buy} index={i + 1} total={plan.buys.length} />
+                ))}
+                <div className="text-[11px] text-muted-foreground/60 pt-0.5 pl-1">
+                  Total deploying <span className="font-mono text-green-400/70">${plan.deployedBudget.toFixed(0)}</span> across {plan.buys.length} positions
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Skipped reasons */}
           {plan.skipped.length > 0 && (
-            <div className="text-[11px] text-muted-foreground/70 mt-2">
+            <div className="text-[11px] text-muted-foreground/60 pt-1 pl-1">
               Stopped: {plan.skipped[0].reason}
               {plan.skipped[0].details ? ` — ${plan.skipped[0].details}` : ''}
             </div>
@@ -296,18 +305,18 @@ function PreviewBlock({ data }: { data: PreviewResponse }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+
 function SwapRow({ swap, index }: { swap: PlannedSwap; index: number }) {
   return (
     <div className="border border-white/10 rounded-lg p-3 bg-card flex items-center gap-3">
       <div className="text-[10px] font-mono text-muted-foreground w-6">#{index}</div>
 
-      {/* Sell */}
       <div className="flex-1 min-w-0">
         <div className="text-[10px] uppercase tracking-widest text-red-400/70">Sell</div>
         <div className="font-mono font-semibold">{swap.sell.symbol}</div>
         <div className="text-[11px] text-muted-foreground">
-          {swap.sell.qty} @ ${swap.sell.price.toFixed(2)} ·{' '}
-          <span className="font-mono">${swap.sell.value.toFixed(0)}</span>
+          {swap.sell.qty} @ ${swap.sell.price.toFixed(2)} · <span className="font-mono">${swap.sell.value.toFixed(0)}</span>
         </div>
         <div className="text-[10px] text-red-400/80 font-mono">
           score {swap.sell.score >= 0 ? '+' : ''}{swap.sell.score}
@@ -316,29 +325,61 @@ function SwapRow({ swap, index }: { swap: PlannedSwap; index: number }) {
 
       <ArrowRight className="w-4 h-4 text-muted-foreground/40 shrink-0" />
 
-      {/* Buy */}
       <div className="flex-1 min-w-0">
         <div className="text-[10px] uppercase tracking-widest text-green-400/70">Buy</div>
         <div className="font-mono font-semibold">{swap.buy.symbol}</div>
         <div className="text-[11px] text-muted-foreground">
-          {swap.buy.qty} @ ${swap.buy.price.toFixed(2)} ·{' '}
-          <span className="font-mono">${swap.buy.value.toFixed(0)}</span>
+          {swap.buy.qty} @ ${swap.buy.price.toFixed(2)} · <span className="font-mono">${swap.buy.value.toFixed(0)}</span>
         </div>
         <div className="text-[10px] text-green-400/80 font-mono">
           score {swap.buy.score >= 0 ? '+' : ''}{swap.buy.score}
         </div>
       </div>
 
-      {/* Score delta */}
       <div className="shrink-0 text-right">
         <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Δ score</div>
-        <div className="text-base font-mono font-bold text-blue-400">
-          +{swap.scoreDelta.toFixed(0)}
+        <div className="text-base font-mono font-bold text-blue-400">+{swap.scoreDelta.toFixed(0)}</div>
+      </div>
+    </div>
+  );
+}
+
+function BuyRow({ buy, index, total }: { buy: PlannedBuy; index: number; total: number }) {
+  return (
+    <div className="border border-green-500/20 rounded-lg p-3 bg-green-500/[0.04] flex items-center gap-3">
+      <div className="text-[10px] font-mono text-muted-foreground w-6">#{index}</div>
+
+      <TrendingUp className="w-3.5 h-3.5 text-green-400/50 shrink-0" />
+
+      <div className="flex-1 min-w-0">
+        <div className="text-[10px] uppercase tracking-widest text-green-400/70">New buy</div>
+        <div className="font-mono font-semibold">{buy.symbol}</div>
+        <div className="text-[11px] text-muted-foreground">
+          {buy.qty} @ ${buy.price.toFixed(2)} · <span className="font-mono">${buy.value.toFixed(0)}</span>
+        </div>
+        <div className="text-[10px] text-green-400/80 font-mono">
+          score {buy.score >= 0 ? '+' : ''}{buy.score}
+        </div>
+      </div>
+
+      {/* Allocation bar */}
+      <div className="shrink-0 w-20 space-y-1 text-right">
+        <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Alloc</div>
+        <div className="text-base font-mono font-bold text-green-400">
+          {(buy.allocationPct * 100).toFixed(0)}%
+        </div>
+        <div className="h-1 rounded-full bg-white/10 overflow-hidden">
+          <div
+            className="h-full rounded-full bg-green-400/50"
+            style={{ width: `${(buy.allocationPct * 100).toFixed(0)}%` }}
+          />
         </div>
       </div>
     </div>
   );
 }
+
+// ---------------------------------------------------------------------------
 
 function ExecutionResult({ result }: { result: ExecuteResult }) {
   const { canceled, executed } = result;
@@ -351,8 +392,7 @@ function ExecutionResult({ result }: { result: ExecuteResult }) {
         <div className="flex items-center gap-2 text-xs text-muted-foreground">
           <XCircle className="w-3.5 h-3.5 text-amber-400/80" />
           <span>
-            Canceled {canceled.succeeded} / {canceled.attempted} pending order
-            {canceled.attempted === 1 ? '' : 's'} before computing the plan
+            Canceled {canceled.succeeded}/{canceled.attempted} pending order{canceled.attempted === 1 ? '' : 's'} before computing the plan
             {canceled.failed > 0 ? ` (${canceled.failed} failed to cancel)` : ''}
           </span>
         </div>
@@ -367,17 +407,12 @@ function ExecutionResult({ result }: { result: ExecuteResult }) {
         <>
           <div className="flex items-center gap-2 text-sm">
             <Check className="w-4 h-4 text-green-400" />
-            <span className="font-medium">
-              Placed {ok} / {executed.length} orders
-            </span>
+            <span className="font-medium">Placed {ok}/{executed.length} orders</span>
           </div>
-
           <div className="text-[11px] font-mono space-y-0.5 text-muted-foreground">
             {executed.map((o, i) => (
               <div key={i} className="flex items-center gap-2">
-                <span className={o.ok ? 'text-green-400/80' : 'text-red-400'}>
-                  {o.ok ? '✓' : '✗'}
-                </span>
+                <span className={o.ok ? 'text-green-400/80' : 'text-red-400'}>{o.ok ? '✓' : '✗'}</span>
                 <span className="uppercase">{o.side}</span>
                 <span className="text-foreground">{o.symbol}</span>
                 <span>×{o.qty}</span>
