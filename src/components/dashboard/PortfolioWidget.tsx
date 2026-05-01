@@ -7,10 +7,11 @@ const ACCENT = "#3b82f6";
 export async function PortfolioWidget() {
   const positions = await getPositions();
 
+  const totalInvested = positions.reduce((s, p) => s + parseFloat(p.cost_basis), 0);
   const totalValue = positions.reduce((s, p) => s + parseFloat(p.market_value), 0);
   const totalPL = positions.reduce((s, p) => s + parseFloat(p.unrealized_pl), 0);
   const totalPLpc =
-    totalValue > 0 ? (totalPL / (totalValue - totalPL)) * 100 : 0;
+    totalInvested > 0 ? (totalPL / totalInvested) * 100 : 0;
 
   const preview = [...positions]
     .sort((a, b) => Math.abs(parseFloat(b.market_value)) - Math.abs(parseFloat(a.market_value)))
@@ -43,20 +44,32 @@ export async function PortfolioWidget() {
       </div>
 
       {positions.length > 0 && (
-        <div className="flex items-center gap-3 mb-4 font-mono text-sm">
-          <span className="text-muted-foreground tabular-nums">
-            ${totalValue.toFixed(2)}
-          </span>
-          <span
-            className={`font-semibold tabular-nums ${
-              totalPL >= 0 ? "text-emerald-400" : "text-red-400"
-            }`}
-          >
-            {totalPL >= 0 ? "+" : ""}${totalPL.toFixed(2)}{" "}
-            <span className="text-xs opacity-70">
-              ({totalPLpc >= 0 ? "+" : ""}{totalPLpc.toFixed(2)}%)
+        <div className="space-y-1.5 mb-4 font-mono text-sm">
+          <div className="flex items-center gap-3">
+            <span className="text-muted-foreground">Invested:</span>
+            <span className="font-semibold tabular-nums">
+              ${totalInvested.toFixed(2)}
             </span>
-          </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-muted-foreground">Current:</span>
+            <span className="font-semibold tabular-nums">
+              ${totalValue.toFixed(2)}
+            </span>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-muted-foreground">P/L:</span>
+            <span
+              className={`font-semibold tabular-nums ${
+                totalPL >= 0 ? "text-emerald-400" : "text-red-400"
+              }`}
+            >
+              {totalPL >= 0 ? "+" : ""}${totalPL.toFixed(2)}{" "}
+              <span className="text-xs opacity-70">
+                ({totalPLpc >= 0 ? "+" : ""}{totalPLpc.toFixed(2)}%)
+              </span>
+            </span>
+          </div>
         </div>
       )}
 
