@@ -50,6 +50,16 @@ def _score_all_universe() -> dict[str, dict]:
     )
     daily    = shared.get_daily_bars_multi(shared.UNIVERSE, limit=22)
     spy_bars = intraday.get("SPY", [])
+
+    # Warn about missing/sparse bar data
+    empty = [s for s in shared.UNIVERSE if not intraday.get(s)]
+    if empty:
+        print(f"  [warn] No intraday bars: {', '.join(empty)}")
+    sparse = [s for s in shared.UNIVERSE if 0 < len(intraday.get(s, [])) < 10]
+    if sparse:
+        print(f"  [warn] Sparse (<10 bars): "
+              f"{', '.join(f'{s}={len(intraday[s])}' for s in sparse)}")
+
     scores: dict[str, dict] = {}
     for sym in shared.UNIVERSE:
         result = compute_intraday_score(
@@ -57,6 +67,18 @@ def _score_all_universe() -> dict[str, dict]:
         )
         if result["enough_data"]:
             scores[sym] = result
+
+    # Print score distribution so failures are visible in the Actions log
+    ranked = sorted(scores.items(), key=lambda x: x[1]["score"], reverse=True)
+    positives = [(s, r["score"]) for s, r in ranked if r["score"] >= 1]
+    negatives = [(s, r["score"]) for s, r in ranked if r["score"] < 0]
+    print(f"  Scores: {len(scores)} stocks scored  |  "
+          f"≥1: {len(positives)}  |  <0: {len(negatives)}")
+    if positives:
+        print(f"  Top:  {', '.join(f'{s}={sc}' for s, sc in positives[:10])}")
+    if negatives:
+        print(f"  Neg:  {', '.join(f'{s}={sc}' for s, sc in negatives[:5])}")
+
     return scores
 
 

@@ -162,6 +162,8 @@ def compute_intraday_score(
 
     # -----------------------------------------------------------------------
     # Signal 3: Volume activity (current bar vs session average)
+    # Thresholds are intentionally loose: afternoon volume is naturally lower
+    # than the morning rush, so a moderate afternoon bar should score neutral.
     # -----------------------------------------------------------------------
     if len(bars_5min) >= 5:
         vols    = [float(b.get("v", 0)) for b in bars_5min]
@@ -169,14 +171,14 @@ def compute_intraday_score(
         cur_vol = vols[-1]
         if avg_vol > 0:
             vol_ratio = cur_vol / avg_vol
-            if vol_ratio >= 1.3:
+            if vol_ratio >= 1.5:
                 score += 1
                 signals.append({"name": "Volume", "value": f"{vol_ratio:.1f}×", "contribution": 1,
-                                 "description": "High volume — stock in play (≥1.3× average)"})
-            elif vol_ratio < 0.7:
+                                 "description": "High volume — stock in play (≥1.5× average)"})
+            elif vol_ratio < 0.5:
                 score -= 1
                 signals.append({"name": "Volume", "value": f"{vol_ratio:.1f}×", "contribution": -1,
-                                 "description": "Low volume — illiquid, avoid entry (<0.7× average)"})
+                                 "description": "Very low volume — illiquid, avoid entry (<0.5× average)"})
             else:
                 signals.append({"name": "Volume", "value": f"{vol_ratio:.1f}×", "contribution": 0,
                                  "description": "Normal volume"})
@@ -257,23 +259,25 @@ def compute_intraday_score(
 
     # -----------------------------------------------------------------------
     # Signal 8: ATR activity — "in play" filter
-    # High ATR (≥1.5% of price): stock has intraday range worth trading
-    # Low ATR (<0.3% of price): too quiet, slippage/spread kills the edge
+    # Calibrated for 5-minute bars of large-cap US equities.
+    # Typical 5-min ATR for $100-500 stocks: 0.1–0.5% of price.
+    # High ATR (≥0.5%): actively moving, good intraday opportunity.
+    # Very low ATR (<0.1%): stock is basically frozen — avoid.
     # -----------------------------------------------------------------------
     atr_val = _atr(bars_5min)
     if atr_val is not None and price > 0:
         atr_pct = atr_val / price * 100
-        if atr_pct >= 1.5:
+        if atr_pct >= 0.5:
             score += 1
-            signals.append({"name": "ATR", "value": f"{atr_pct:.1f}%", "contribution": 1,
-                             "description": "High ATR — stock is 'in play' (≥1.5% of price)"})
-        elif atr_pct < 0.3:
+            signals.append({"name": "ATR", "value": f"{atr_pct:.2f}%", "contribution": 1,
+                             "description": "High ATR — stock is actively moving (≥0.5% of price)"})
+        elif atr_pct < 0.1:
             score -= 1
-            signals.append({"name": "ATR", "value": f"{atr_pct:.1f}%", "contribution": -1,
-                             "description": "Very low ATR — too quiet for intraday (<0.3%)"})
+            signals.append({"name": "ATR", "value": f"{atr_pct:.2f}%", "contribution": -1,
+                             "description": "Very low ATR — stock barely moving (<0.1%)"})
         else:
-            signals.append({"name": "ATR", "value": f"{atr_pct:.1f}%", "contribution": 0,
-                             "description": "Normal ATR range"})
+            signals.append({"name": "ATR", "value": f"{atr_pct:.2f}%", "contribution": 0,
+                             "description": "Normal ATR range for 5-min bars"})
 
     # -----------------------------------------------------------------------
     # Signal 9: Opening Range Breakout (first 6 bars = first 30 min)

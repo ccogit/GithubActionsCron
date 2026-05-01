@@ -1,25 +1,22 @@
 name: Intraday Trading
 
-# Runs every minute via repository_dispatch type 'tick'  (same event as the
-# price-tick worker — piggybacking on the existing cron-job.org webhook).
+# Trigger modes
 #
-# Execution order per run:
-#   1. Breakout strategy   — pattern-specific entries (20d-high + volume)
-#   2. VWAP strategy       — pattern-specific entries (crossover + volume)
-#   3. Mean Reversion      — pattern-specific entries (VWAP gap + RSI oversold)
-#   4. Portfolio Manager   — deploys remaining cash to top intraday-scored stocks;
-#                            also manages exits for its own positions
+#  1. repository_dispatch type 'tick'  (cron-job.org webhook, every minute)
+#     → runs ONE cycle immediately.
 #
-# Strategies run first so they get first pick on specific patterns.
-# The portfolio manager then fills any remaining capacity with the best-
-# scoring stocks according to the intraday attractiveness model.
+#  2. schedule cron  */5  (GitHub's built-in scheduler, every 5 min)
+#     → runs FIVE cycles with ~55 s sleep between them, giving ~minute-level
+#        coverage without any external dependency.
 #
-# All four workers use the SAME intraday attractiveness score
-# (worker/intraday_attractiveness.py) and the SAME Alpaca paper account
-# (INTRADAY_ALPACA_KEY / INTRADAY_ALPACA_SECRET).  Neither reads the main
-# portfolio's Supabase signal tables.
+#  Either trigger alone is sufficient.  When both are active the tick fires
+#  every minute (1 cycle) and the cron provides a backup every 5 minutes.
 #
-# Maximum simultaneous positions: 20 (enforced globally by intraday_shared.py).
+# Execution order per cycle:
+#   1. Breakout strategy   — pattern entries (20d-high + volume)
+#   2. VWAP strategy       — pattern entries (crossover + volume)
+#   3. Mean Reversion      — pattern entries (VWAP gap + RSI oversold)
+#   4. Portfolio Manager   — deploys remaining cash to top-scored stocks
 #
 # Required secrets:
 #   SUPABASE_URL, SUPABASE_SERVICE_ROLE
@@ -27,15 +24,15 @@ name: Intraday Trading
 
 on:
   repository_dispatch:
-    types: [tick]   # fires every minute from cron-job.org
+    types: [tick]         # cron-job.org fires this every minute
   schedule:
-    - cron: '*/5 13-21 * * 1-5'   # fallback: every 5 min during market hours
+    - cron: '*/5 13-20 * * 1-5'   # every 5 min, 9 AM–4 PM ET (fallback)
   workflow_dispatch:
 
 jobs:
   trade:
     runs-on: ubuntu-latest
-    timeout-minutes: 4   # hard kill before next tick fires
+    timeout-minutes: 8
 
     steps:
       - uses: actions/checkout@v4
@@ -47,42 +44,39 @@ jobs:
       - name: Install dependencies
         run: pip install "supabase>=2.15.0"
 
-      # ── Strategy workers (pattern-specific) ──────────────────────────────
-
-      - name: Breakout + Volume Confirmation
+      - name: Run intraday trading loop
         working-directory: worker
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_URL:          ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-          INTRADAY_ALPACA_KEY: ${{ secrets.INTRADAY_ALPACA_KEY }}
+          INTRADAY_ALPACA_KEY:   ${{ secrets.INTRADAY_ALPACA_KEY }}
           INTRADAY_ALPACA_SECRET: ${{ secrets.INTRADAY_ALPACA_SECRET }}
-        run: python intraday_breakout.py
+        run: |
+          # When triggered by 'tick' (every-minute webhook): run 1 cycle.
+          # When triggered by the 5-min cron or manually: run 5 cycles × ~55s gaps.
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            CYCLES=1
+          else
+            CYCLES=5
+          fi
 
-      - name: VWAP Strategy
-        working-directory: worker
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-          INTRADAY_ALPACA_KEY: ${{ secrets.INTRADAY_ALPACA_KEY }}
-          INTRADAY_ALPACA_SECRET: ${{ secrets.INTRADAY_ALPACA_SECRET }}
-        run: python intraday_vwap.py
+          for cycle in $(seq 1 $CYCLES); do
+            echo ""
+            echo "════════ Cycle $cycle/$CYCLES — $(date -u +%H:%M:%S) UTC ════════"
 
-      - name: Mean Reversion
-        working-directory: worker
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-          INTRADAY_ALPACA_KEY: ${{ secrets.INTRADAY_ALPACA_KEY }}
-          INTRADAY_ALPACA_SECRET: ${{ secrets.INTRADAY_ALPACA_SECRET }}
-        run: python intraday_mean_reversion.py
+            echo "── Breakout + Volume Confirmation ─────────────────────────"
+            python intraday_breakout.py
 
-      # ── Portfolio manager (score-driven cash deployment) ─────────────────
+            echo "── VWAP Strategy ───────────────────────────────────────────"
+            python intraday_vwap.py
 
-      - name: Portfolio Manager
-        working-directory: worker
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-          INTRADAY_ALPACA_KEY: ${{ secrets.INTRADAY_ALPACA_KEY }}
-          INTRADAY_ALPACA_SECRET: ${{ secrets.INTRADAY_ALPACA_SECRET }}
-        run: python intraday_portfolio_manager.py
+            echo "── Mean Reversion ──────────────────────────────────────────"
+            python intraday_mean_reversion.py
+
+            echo "── Portfolio Manager ───────────────────────────────────────"
+            python intraday_portfolio_manager.py
+
+            echo "── cycle $cycle complete ───────────────────────────────────"
+
+            [ $cycle -lt $CYCLES ] && sleep 55
+          done
