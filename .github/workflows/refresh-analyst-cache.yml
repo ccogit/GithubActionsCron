@@ -2,7 +2,8 @@ name: Refresh Analyst Cache
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '45 11 * * 1-5'  # 13:45 CEST (March-October)
+    - cron: '45 12 * * 1-5'  # 13:45 CET  (October-March)
   workflow_dispatch:
 
 jobs:

@@ -11,7 +11,8 @@ name: Enrich Politician Signals
 
 on:
   schedule:
-    - cron: '30 8 * * *'   # Daily at 08:30 UTC, after politician trades refresh
+    - cron: '45 11 * * 1-5'  # 13:45 CEST (March-October)
+    - cron: '45 12 * * 1-5'  # 13:45 CET  (October-March)
   workflow_dispatch:
 
 jobs:

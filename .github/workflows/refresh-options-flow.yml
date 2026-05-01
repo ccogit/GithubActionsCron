@@ -2,7 +2,8 @@ name: Refresh Options Flow
 
 on:
   schedule:
-    - cron: '0 22 * * 1-5'   # 22:00 UTC Mon-Fri (after market close)
+    - cron: '45 11 * * 1-5'  # 13:45 CEST (March-October)
+    - cron: '45 12 * * 1-5'  # 13:45 CET  (October-March)
   workflow_dispatch:
 
 jobs:

@@ -2,8 +2,8 @@ name: Refresh Index Constituents
 
 on:
   schedule:
-    # Sundays at 02:00 UTC — indexes rebalance quarterly, weekly is plenty
-    - cron: '0 2 * * 0'
+    - cron: '45 11 * * 1-5'  # 13:45 CEST (March-October)
+    - cron: '45 12 * * 1-5'  # 13:45 CET  (October-March)
   workflow_dispatch:
 
 jobs:
