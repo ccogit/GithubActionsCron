@@ -59,8 +59,7 @@ def _proportional_allocations(
     """Score-proportional allocation with per-stock cap. Returns {symbol: usd}."""
     if not candidates:
         return {}
-    cap      = budget * (shared.MAX_POSITION_PCT * 1.5)  # slightly relaxed cap for PM
-    cap      = min(cap, shared.MAX_POSITION_USD)
+    cap      = shared.MAX_POSITION_USD   # hard per-stock ceiling
     total_sc = sum(r["score"] for _, r in candidates)
     if total_sc <= 0:
         return {}

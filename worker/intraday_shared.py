@@ -45,9 +45,9 @@ UNIVERSE = [
 # ---------------------------------------------------------------------------
 MAX_TOTAL_POSITIONS    = 20   # hard cap across all strategies
 MAX_POSITIONS_PER_STRATEGY = 3
-MAX_POSITION_PCT       = 0.08   # max 8% of buying power per trade
-MAX_POSITION_USD       = 2000.0
-MIN_TRADE_USD          = 200.0
+MAX_POSITION_PCT       = 0.05   # max 5% of buying power per trade
+MAX_POSITION_USD       = 5000.0 # hard per-position cap (~5% of $100k account)
+MIN_TRADE_USD          = 500.0
 
 ET = ZoneInfo("America/New_York")
 
