@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { getPositions, getMultiBarChanges, type HistoricalChanges } from "@/lib/alpaca";
+import { getPositions, getMultiBarChanges, getFirstBuyDates, type HistoricalChanges } from "@/lib/alpaca";
 import { RealtimeWatchlist } from "@/components/RealtimeWatchlist";
 import { CollapsibleSection } from "@/components/CollapsibleSection";
 import { AddStockForms } from "@/components/AddStockForms";
@@ -25,6 +25,9 @@ export default async function StocksPage() {
     db.from("alert_log").select("*").order("sent_at", { ascending: false }).limit(20),
     getPositions(),
   ]);
+
+  const ownedPositionSymbols = (positions).map((p) => p.symbol);
+  const firstBuyDates = await getFirstBuyDates(ownedPositionSymbols);
 
   const watchlist: WatchlistRow[] = watchlistRes.data ?? [];
   const ticks: PriceTick[] = ticksRes.data ?? [];
@@ -170,6 +173,7 @@ export default async function StocksPage() {
             historicalChanges={historicalChanges}
             colors={CHART_COLORS}
             signals={signalsBySymbol}
+            firstBuyDates={firstBuyDates}
           />
         </CollapsibleSection>
 

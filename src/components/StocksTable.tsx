@@ -58,6 +58,7 @@ type Props = {
   periodChanges: Record<string, PeriodChanges>;
   colors: string[];
   signals?: Record<string, SymbolSignals>;
+  firstBuyDates?: Record<string, string>;
 };
 
 function OverallSignalBadge({ s }: { s?: SymbolSignals }) {
@@ -90,7 +91,12 @@ function OverallSignalBadge({ s }: { s?: SymbolSignals }) {
   );
 }
 
-export function StocksTable({ holdings, latestPrices, periodChanges, colors, signals }: Props) {
+function formatBuyDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+export function StocksTable({ holdings, latestPrices, periodChanges, colors, signals, firstBuyDates }: Props) {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editValue, setEditValue] = useState("");
   const [selectedSymbol, setSelectedSymbol] = useState<string | null>(null);
@@ -133,6 +139,11 @@ export function StocksTable({ holdings, latestPrices, periodChanges, colors, sig
     setBuyingSymbol(null);
   }
 
+  const totalInvested = holdings.reduce((sum, h) => {
+    if (!h.position) return sum;
+    return sum + parseFloat(h.position.cost_basis);
+  }, 0);
+
   if (holdings.length === 0) {
     return (
       <div className="py-12 text-center text-sm text-muted-foreground font-mono">
@@ -150,6 +161,7 @@ export function StocksTable({ holdings, latestPrices, periodChanges, colors, sig
             <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Price</th>
             <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Change</th>
             <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Holding</th>
+            <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Invested</th>
             <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">P&amp;L</th>
             <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Signals</th>
             <th className="text-right py-2.5 px-3 text-xs font-medium uppercase tracking-widest text-muted-foreground">Alert at</th>
@@ -252,6 +264,26 @@ export function StocksTable({ holdings, latestPrices, periodChanges, colors, sig
                       <span className="text-muted-foreground/70 text-[10px]">
                         @ ${avgEntry.toFixed(2)}
                       </span>
+                    </div>
+                  ) : (
+                    <span className="text-muted-foreground">—</span>
+                  )}
+                </td>
+
+                {/* Invested (cost basis + first buy date) */}
+                <td className="py-3 px-3 text-right font-mono text-xs tabular-nums">
+                  {isOwned ? (
+                    <div className="flex flex-col items-end leading-tight">
+                      <span className="text-foreground font-semibold">
+                        ${parseFloat(h.position!.cost_basis).toFixed(2)}
+                      </span>
+                      {firstBuyDates?.[h.symbol] ? (
+                        <span className="text-muted-foreground/70 text-[10px]">
+                          since {formatBuyDate(firstBuyDates[h.symbol])}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground/40 text-[10px]">—</span>
+                      )}
                     </div>
                   ) : (
                     <span className="text-muted-foreground">—</span>
@@ -400,7 +432,7 @@ export function StocksTable({ holdings, latestPrices, periodChanges, colors, sig
               </tr>
               {isSelected && (
                 <tr>
-                  <td colSpan={9} className="px-4 pb-5 pt-1 bg-white/[0.015] border-b border-white/4">
+                  <td colSpan={10} className="px-4 pb-5 pt-1 bg-white/[0.015] border-b border-white/4">
                     <StockChartPanel
                       symbol={h.symbol}
                       color={color}
@@ -414,6 +446,19 @@ export function StocksTable({ holdings, latestPrices, periodChanges, colors, sig
             );
           })}
         </tbody>
+        {totalInvested > 0 && (
+          <tfoot>
+            <tr className="border-t border-white/10 bg-white/[0.015]">
+              <td colSpan={4} className="py-2.5 px-3 text-xs font-medium text-muted-foreground uppercase tracking-widest">
+                Total invested
+              </td>
+              <td className="py-2.5 px-3 text-right font-mono font-semibold text-foreground tabular-nums text-sm">
+                ${totalInvested.toFixed(2)}
+              </td>
+              <td colSpan={5} />
+            </tr>
+          </tfoot>
+        )}
       </table>
     </div>
   );

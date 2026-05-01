@@ -119,6 +119,30 @@ export async function getMultiBarChanges(
   }
 }
 
+export async function getFirstBuyDates(symbols: string[]): Promise<Record<string, string>> {
+  if (symbols.length === 0) return {};
+  try {
+    const params = new URLSearchParams({ status: "filled", limit: "500", direction: "asc" });
+    const res = await fetch(`${ENDPOINT}/orders?${params}`, {
+      headers: headers(),
+      cache: "no-store",
+    });
+    if (!res.ok) return {};
+    const orders: AlpacaOrder[] = await res.json();
+    const symSet = new Set(symbols);
+    const result: Record<string, string> = {};
+    for (const order of orders) {
+      if (!symSet.has(order.symbol)) continue;
+      if (order.side !== "buy") continue;
+      if (!order.filled_at) continue;
+      if (!result[order.symbol]) result[order.symbol] = order.filled_at;
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
 export async function getPortfolioHistory(range: string): Promise<{
   points: PortfolioPoint[];
   baseValue: number;
