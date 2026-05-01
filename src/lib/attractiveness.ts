@@ -46,6 +46,10 @@ export interface AttractivenessSignals {
   // --- social sentiment (Tradestie WSB + ApeWisdom Reddit, hourly) ---
   wsb_sentiment?: string | null;     // 'Bullish' | 'Bearish'
 
+  // --- options flow (unusual activity, daily) ---
+  options_skew?: number | null;      // -1.0 to +1.0 (call/put ratio)
+  options_unusual_count?: number | null;
+
   // --- macro context (FRED economic indicators, daily) ---
   fed_rate?: number | null;          // Federal Funds Rate %
   unemployment?: number | null;      // Unemployment Rate %
@@ -453,7 +457,53 @@ export function computeAttractiveness(s: AttractivenessSignals): AttractivenessR
     });
   }
 
-  // 12. Macro context (Fed rate + unemployment)
+  // 12. Options Flow (Unusual Activity & Skew)
+  if (s.options_unusual_count != null && s.options_unusual_count >= 5) {
+    if (s.options_skew != null) {
+      if (s.options_skew > 0.3) {
+        score += 1; count++;
+        reasons.push("bullish options flow");
+        signals.push({
+          name: "Options Flow",
+          value: `Skew +${s.options_skew.toFixed(2)}`,
+          contribution: 1,
+          description: `Bullish unusual activity (${s.options_unusual_count} contracts)`,
+        });
+      } else if (s.options_skew < -0.3) {
+        score -= 1; count++;
+        reasons.push("bearish options flow");
+        signals.push({
+          name: "Options Flow",
+          value: `Skew ${s.options_skew.toFixed(2)}`,
+          contribution: -1,
+          description: `Bearish unusual activity (${s.options_unusual_count} contracts)`,
+        });
+      } else {
+        signals.push({
+          name: "Options Flow",
+          value: `Skew ${s.options_skew.toFixed(2)}`,
+          contribution: 0,
+          description: "Neutral options flow (balanced calls/puts)",
+        });
+      }
+    }
+  } else if (s.options_unusual_count != null) {
+    signals.push({
+      name: "Options Flow",
+      value: "Low activity",
+      contribution: 0,
+      description: "Insufficient unusual options activity (<5 contracts)",
+    });
+  } else {
+    signals.push({
+      name: "Options Flow",
+      value: "N/A",
+      contribution: 0,
+      description: "No options flow data available",
+    });
+  }
+
+  // 13. Macro context (Fed rate + unemployment)
   if (s.fed_rate != null) {
     if (s.fed_rate >= 5) {
       score -= 1; count++;

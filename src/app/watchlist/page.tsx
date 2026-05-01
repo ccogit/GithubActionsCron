@@ -74,7 +74,7 @@ export default async function StocksPage() {
   const signalsBySymbol: Record<string, SymbolSignals> = {};
   let historicalChanges: Record<string, HistoricalChanges> = {};
   if (ownedSymbols.length > 0) {
-    const [barChanges, analystRes, politicianRes, ratingsRes, techRes, shortRes, insiderRes, earningsRes, socialRes, ecoRes] =
+    const [barChanges, analystRes, politicianRes, ratingsRes, techRes, shortRes, insiderRes, earningsRes, socialRes, optionsRes, ecoRes] =
       await Promise.all([
         getMultiBarChanges(ownedSymbols),
         db.from("analyst_cache").select("symbol, upside_pct").in("symbol", ownedSymbols),
@@ -85,6 +85,7 @@ export default async function StocksPage() {
         db.from("insider_signals").select("symbol, signal").in("symbol", ownedSymbols),
         db.from("earnings_signals").select("symbol, beat_rate").in("symbol", ownedSymbols),
         db.from("social_sentiment").select("symbol, wsb_sentiment").in("symbol", ownedSymbols),
+        db.from("options_flow").select("symbol, call_put_skew, unusual_contracts").in("symbol", ownedSymbols),
         db.from("economic_indicators").select("indicator, value"),
       ]);
     historicalChanges = barChanges;
@@ -103,6 +104,7 @@ export default async function StocksPage() {
     for (const row of insiderRes.data ?? [])    signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], insider_signal: row.signal };
     for (const row of earningsRes.data ?? [])   signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], eps_beat_rate: row.beat_rate };
     for (const row of socialRes.data ?? [])     signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], wsb_sentiment: row.wsb_sentiment };
+    for (const row of optionsRes.data ?? [])    signalsBySymbol[row.symbol] = { ...signalsBySymbol[row.symbol], options_skew: row.call_put_skew, options_unusual_count: row.unusual_contracts };
 
     // Inject macro context (same for all symbols)
     for (const sym of ownedSymbols) {

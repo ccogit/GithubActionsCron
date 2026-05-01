@@ -23,3 +23,13 @@ export type AlertLogRow = {
   order_placed: boolean | null;
   order_id: string | null;
 };
+
+export type OptionsFlowRow = {
+  symbol: string;
+  unusual_contracts: number;
+  unusual_calls: number;
+  unusual_puts: number;
+  call_put_skew: number;
+  total_volume_unusual: number;
+  updated_at: string;
+};

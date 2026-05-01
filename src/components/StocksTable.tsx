@@ -38,6 +38,8 @@ export type SymbolSignals = {
   wsb_sentiment?: string | null;
   fed_rate?: number | null;
   unemployment?: number | null;
+  options_skew?: number | null;
+  options_unusual_count?: number | null;
 };
 
 type Props = {
