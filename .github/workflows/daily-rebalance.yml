@@ -28,6 +28,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           last_run=$(gh run list \
+            --repo "$GITHUB_REPOSITORY" \
             --workflow refresh-analyst-cache.yml \
             --status completed \
             --limit 1 \
@@ -74,7 +75,7 @@ jobs:
 
           for workflow in "${workflows[@]}"; do
             echo "Triggering $workflow..."
-            gh workflow run "$workflow" --ref main
+            gh workflow run "$workflow" --repo "$GITHUB_REPOSITORY" --ref main
           done
 
           # Give GitHub a few seconds to register the runs
@@ -82,7 +83,7 @@ jobs:
 
           run_ids=""
           for workflow in "${workflows[@]}"; do
-            run_id=$(gh run list --workflow "$workflow" --limit 1 --json databaseId --jq '.[0].databaseId')
+            run_id=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --limit 1 --json databaseId --jq '.[0].databaseId')
             echo "  $workflow -> run $run_id"
             run_ids="$run_ids $run_id"
           done
@@ -103,7 +104,7 @@ jobs:
             all_done=true
 
             for run_id in "${run_ids[@]}"; do
-              conclusion=$(gh run view "$run_id" --json conclusion --jq '.conclusion')
+              conclusion=$(gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --json conclusion --jq '.conclusion')
               if [ -z "$conclusion" ] || [ "$conclusion" == "null" ]; then
                 all_done=false
               else
