@@ -8,12 +8,11 @@ Uses daily signals already populated in Supabase by account 1's refresh workers:
   - relative_strength:          3-month RS vs SPY benchmark
   - finnhub_metrics:            P/E TTM (valuation sanity check)
 
-Scores each universe stock (-3 to +4), takes the top TARGET_POSITIONS,
-and opens proportional positions using BASELINE_CAPITAL_FRAC of available equity.
-The intraday portfolio manager and strategy workers then deploy the remainder
-into shorter-term opportunities throughout the day.
+Scores each universe stock (-3 to +4), then ALWAYS picks the top TARGET_POSITIONS
+stocks regardless of score direction (no pass/fail threshold). Equal-weight
+allocation guarantees every position receives the same capital slice.
 
-Idempotent: will not open a second baseline if one was already opened today.
+Idempotent: skips if any daily_baseline trades exist for today.
 Strategy tag:  'daily_baseline'
 EOD:           positions closed by intraday_eod_cleanup.py
 Intraday exit: stop/target monitored every minute by intraday_portfolio_manager.py
@@ -30,11 +29,10 @@ SUPABASE_URL          = os.environ["SUPABASE_URL"]
 SUPABASE_SERVICE_ROLE = os.environ["SUPABASE_SERVICE_ROLE"]
 
 STRATEGY              = "daily_baseline"
-BASELINE_CAPITAL_FRAC = 0.70    # deploy 70 % of available equity at open
-STOP_LOSS_PCT         = 0.025   # 2.5 % intraday stop
-TAKE_PROFIT_PCT       = 0.06    # 6 % intraday target
-TARGET_POSITIONS      = 10      # how many stocks to open at the baseline
-MIN_DAILY_SCORE       = 0       # include neutral-or-better (score ≥ 0)
+BASELINE_CAPITAL_FRAC = 0.80    # deploy 80 % of available equity at open
+STOP_LOSS_PCT         = 0.03    # 3 % hard stop
+TAKE_PROFIT_PCT       = 0.07    # 7 % take-profit
+TARGET_POSITIONS      = 10      # always open exactly this many stocks
 
 
 # ---------------------------------------------------------------------------
@@ -46,12 +44,12 @@ def _fetch_daily_scores(db, symbols: list[str]) -> dict[str, int]:
     Score each symbol on stable daily signals from Supabase.
 
     Scoring breakdown (each signal ±1):
-      technical_signals        buy_count ≥ 3   → +1 ; sell_count ≥ 3  → -1
-      finnhub_technical_advisory Strong Buy/Buy → +1 ; Sell/Strong Sell → -1
-      relative_strength        rs_3m > +5 %    → +1 ; rs_3m < -5 %     → -1
-      finnhub_metrics          0 < P/E < 30    → +1
+      technical_signals          buy_count ≥ 3   → +1 ; sell_count ≥ 3  → -1
+      finnhub_technical_advisory Strong Buy/Buy   → +1 ; Sell/Strong Sell → -1
+      relative_strength          rs_3m > +5 %     → +1 ; rs_3m < -5 %    → -1
+      finnhub_metrics            0 < P/E < 30     → +1
 
-    Range: -3 to +4
+    Range: -3 to +4. Defaults to 0 for any symbol missing from a table.
     """
     scores: dict[str, int] = {s: 0 for s in symbols}
 
@@ -131,8 +129,49 @@ def _fetch_daily_scores(db, symbols: list[str]) -> dict[str, int]:
     return scores
 
 
+def _get_prices(symbols: list[str]) -> dict[str, float]:
+    """
+    Fetch the most recent price for each symbol.
+
+    Tries 5-min intraday bars first (available once trading has started),
+    then falls back to the previous daily close. This ensures price data
+    is available even when IEX hasn't generated enough intraday bars yet.
+    """
+    prices: dict[str, float] = {}
+
+    # Primary: latest 5-min bar close
+    try:
+        intraday = shared.get_bars_multi(symbols, timeframe="5Min", limit=5)
+        for sym, bars in intraday.items():
+            if bars:
+                p = float(bars[-1]["c"])
+                if p > 0:
+                    prices[sym] = p
+    except Exception as e:
+        print(f"  [prices] intraday bars: {e}")
+
+    # Fallback: previous daily close for any symbol still missing
+    missing = [s for s in symbols if s not in prices]
+    if missing:
+        try:
+            daily = shared.get_daily_bars_multi(missing, limit=2)
+            for sym, bars in daily.items():
+                if bars:
+                    p = float(bars[-1]["c"])
+                    if p > 0:
+                        prices[sym] = p
+        except Exception as e:
+            print(f"  [prices] daily bars fallback: {e}")
+
+    still_missing = [s for s in symbols if s not in prices]
+    if still_missing:
+        print(f"  [warn] No price data for: {', '.join(still_missing)}")
+
+    return prices
+
+
 def _already_opened_today(db) -> bool:
-    """True if a daily_baseline position was already opened today (UTC date)."""
+    """True if any daily_baseline trades were opened today (UTC date)."""
     today_iso = datetime.now(timezone.utc).date().isoformat()
     try:
         rows = (
@@ -168,35 +207,33 @@ def run(db) -> None:
     daily_scores = _fetch_daily_scores(db, shared.UNIVERSE)
 
     ranked = sorted(daily_scores.items(), key=lambda x: x[1], reverse=True)
-    print(f"  Universe scores ({len(ranked)} stocks):")
+    print(f"  Ranked universe ({len(ranked)} stocks):")
     for sym, sc in ranked:
         print(f"    {sym:6s} {sc:+d}")
 
     # -----------------------------------------------------------------------
-    # 2. Select candidates: score ≥ MIN_DAILY_SCORE, capped at TARGET_POSITIONS
+    # 2. Always pick top TARGET_POSITIONS stocks — no pass/fail threshold.
+    #    Equal-weight allocation ensures every position gets the same capital.
     # -----------------------------------------------------------------------
-    candidates = [(sym, sc) for sym, sc in ranked if sc >= MIN_DAILY_SCORE]
+    candidates = ranked[:TARGET_POSITIONS]
+    print(f"\n  Selected top {len(candidates)}: {[s for s, _ in candidates]}")
 
-    # If fewer than TARGET_POSITIONS qualify, fill from the best negatives
-    if len(candidates) < TARGET_POSITIONS:
-        negatives = [(sym, sc) for sym, sc in ranked if sc < MIN_DAILY_SCORE]
-        fill = negatives[: TARGET_POSITIONS - len(candidates)]
-        if fill:
-            print(f"  Filling {len(fill)} slots from best-scoring negatives: "
-                  f"{[s for s, _ in fill]}")
-        candidates += fill
+    # -----------------------------------------------------------------------
+    # 3. Fetch prices (intraday bars first, daily close as fallback)
+    # -----------------------------------------------------------------------
+    syms   = [sym for sym, _ in candidates]
+    prices = _get_prices(syms)
 
-    candidates = candidates[:TARGET_POSITIONS]
-
+    # Drop any candidates we couldn't price
+    candidates = [(sym, sc) for sym, sc in candidates if prices.get(sym, 0) > 0]
     if not candidates:
-        print("No candidates available — nothing to open.")
+        print("No priced candidates — aborting.")
         return
-
-    print(f"  Opening {len(candidates)} baseline positions: "
-          f"{[c[0] for c in candidates]}")
+    if len(candidates) < TARGET_POSITIONS:
+        print(f"  [warn] Only {len(candidates)} of {TARGET_POSITIONS} candidates have prices.")
 
     # -----------------------------------------------------------------------
-    # 3. Budget = BASELINE_CAPITAL_FRAC × deployable equity
+    # 4. Budget = BASELINE_CAPITAL_FRAC × deployable equity
     # -----------------------------------------------------------------------
     account          = shared.get_account()
     positions        = shared.get_positions()
@@ -205,46 +242,33 @@ def run(db) -> None:
     deployable       = max(0.0, equity - already_invested)
     budget           = deployable * BASELINE_CAPITAL_FRAC
 
-    print(f"  Equity ${equity:.0f}  invested ${already_invested:.0f}  "
+    print(f"\n  Equity ${equity:.0f}  invested ${already_invested:.0f}  "
           f"deployable ${deployable:.0f}  budget ${budget:.0f}")
 
     if budget < shared.MIN_TRADE_USD * len(candidates):
-        print(f"  Budget ${budget:.0f} too small — aborting.")
+        print(f"  Budget ${budget:.0f} too small for {len(candidates)} positions — aborting.")
         return
 
     # -----------------------------------------------------------------------
-    # 4. Score-proportional allocation with max(score, 0.5) weight floor
+    # 5. Equal-weight allocation: every stock gets budget / n
     # -----------------------------------------------------------------------
-    weights = {sym: max(sc, 0.5) for sym, sc in candidates}
-    total_w = sum(weights.values())
-    allocs  = {sym: (w / total_w) * budget for sym, w in weights.items()}
-
-    # -----------------------------------------------------------------------
-    # 5. Fetch live prices and place orders
-    # -----------------------------------------------------------------------
-    syms    = [sym for sym, _ in candidates]
-    intraday = shared.get_bars_multi(syms, timeframe="5Min", limit=3)
+    per_stock = budget / len(candidates)
+    print(f"  Equal weight: ${per_stock:.0f} per stock × {len(candidates)} stocks\n")
 
     for sym, sc in candidates:
-        usd = allocs.get(sym, 0.0)
-        if usd < shared.MIN_TRADE_USD:
-            continue
-
-        bars  = intraday.get(sym, [])
-        price = float(bars[-1]["c"]) if bars else 0.0
-        if price <= 0:
-            print(f"  [skip] {sym}: no live price")
-            continue
-
-        qty = int(usd / price)
+        price = prices[sym]
+        qty   = int(per_stock / price)
         if qty <= 0:
+            print(f"  [skip] {sym} @ ${price:.2f}: qty rounds to 0 "
+                  f"(need ${price:.0f}+, have ${per_stock:.0f})")
             continue
 
         stop   = round(price * (1 - STOP_LOSS_PCT),  4)
         target = round(price * (1 + TAKE_PROFIT_PCT), 4)
 
-        print(f"  [ENTRY] {sym} @ ${price:.2f}  score={sc:+d}  "
-              f"alloc=${usd:.0f}  qty={qty}  stop=${stop:.2f}  target=${target:.2f}")
+        print(f"  [ENTRY] {sym:6s} @ ${price:.2f}  score={sc:+d}  "
+              f"qty={qty}  alloc=${qty*price:.0f}  "
+              f"stop=${stop:.2f}  target=${target:.2f}")
 
         oid = shared.place_order(sym, qty, "buy")
         shared.log_trade_open(
