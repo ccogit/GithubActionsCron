@@ -30,7 +30,7 @@ const WORKFLOW_NAMES: Record<string, string> = {
   "refresh-finnhub-technical-advisory.yml": "Finnhub Advisory",
   "refresh-finnhub-support-resistance.yml": "Finnhub S/R",
   "refresh-finnhub-metrics.yml":  "Finnhub Metrics",
-  "refresh-economic-indicators.yml","Economic Indicators",
+  "refresh-economic-indicators.yml": "Economic Indicators",
   "enrich-politician-signals.yml":  "Enrich Signals",
 };
 
