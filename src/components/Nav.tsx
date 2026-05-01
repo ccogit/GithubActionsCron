@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "@/app/auth/actions";
-import { WorkflowStatusBadge } from "@/components/WorkflowStatusBadge";
 
 const LINKS = [
   { href: "/", label: "Dashboard" },
@@ -38,7 +37,6 @@ export function Nav({ email }: { email?: string }) {
           </div>
         </div>
         <div className="flex items-center gap-4">
-          <WorkflowStatusBadge />
           <span className="flex items-center gap-1.5 text-xs font-mono text-emerald-400">
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
             LIVE

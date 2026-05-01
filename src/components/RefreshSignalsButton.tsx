@@ -34,6 +34,7 @@ export function RefreshSignalsButton() {
   const latestWorkflows = useRef(workflows);
   latestWorkflows.current = workflows;
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isAutoSession = useRef(false);
 
   const patchWorkflow = useCallback((key: string, patch: Partial<WorkflowEntry>) => {
     setWorkflows((prev) => {
@@ -52,10 +53,52 @@ export function RefreshSignalsButton() {
       if (latestState === 'green') {
         window.dispatchEvent(new CustomEvent('signals-refreshed'));
       }
+      // After auto-detected session completes, reset so detection can run again
+      if (isAutoSession.current) {
+        const id = setTimeout(() => {
+          isAutoSession.current = false;
+          setStreamDone(false);
+          setWorkflows(new Map());
+        }, 5000);
+        return () => clearTimeout(id);
+      }
     }
     prevState.current = latestState;
   }, [latestState]);
 
+  // Auto-detect refresh workflows triggered by the scheduled rebalance
+  useEffect(() => {
+    if (streaming || streamDone) return;
+
+    const detect = async () => {
+      try {
+        const res = await fetch('/api/active-refresh-runs');
+        const { workflows: active } = await res.json();
+        if (!active?.length) return;
+
+        const map = new Map<string, WorkflowEntry>();
+        for (const wf of active) {
+          map.set(wf.workflow, {
+            workflow:     wf.workflow,
+            name:         wf.name,
+            dispatchedAt: wf.dispatchedAt,
+            runState:     wf.state as RunState,
+          });
+        }
+        isAutoSession.current = true;
+        setWorkflows(map);
+        setStreamDone(true);
+      } catch {
+        // ignore
+      }
+    };
+
+    detect();
+    const id = setInterval(detect, 10_000);
+    return () => clearInterval(id);
+  }, [streaming, streamDone]);
+
+  // Poll workflow-status for all non-terminal entries
   useEffect(() => {
     if (!streamDone) return;
 
@@ -78,9 +121,9 @@ export function RefreshSignalsButton() {
             const data = await res.json();
             if (data.state) {
               patchWorkflow(key, {
-                runState: data.state as RunState,
+                runState:   data.state as RunState,
                 conclusion: data.conclusion,
-                stepsDone: data.stepsDone,
+                stepsDone:  data.stepsDone,
                 stepsTotal: data.stepsTotal,
               });
             }
@@ -100,6 +143,7 @@ export function RefreshSignalsButton() {
     setStreaming(true);
     setStreamDone(false);
     setWorkflows(new Map());
+    isAutoSession.current = false;
 
     try {
       const res = await fetch('/api/trigger-refresh', { method: 'POST' });
@@ -123,10 +167,10 @@ export function RefreshSignalsButton() {
             const ev = JSON.parse(line);
             if (ev.type === 'dispatched') {
               const entry: WorkflowEntry = {
-                workflow: ev.workflow,
-                name: ev.name,
+                workflow:     ev.workflow,
+                name:         ev.name,
                 dispatchedAt: ev.dispatchedAt,
-                runState: ev.ok ? 'queued' : 'failed',
+                runState:     ev.ok ? 'queued' : 'failed',
                 dispatchError: ev.error,
               };
               setWorkflows((prev) => new Map(prev).set(ev.workflow, entry));
@@ -141,10 +185,10 @@ export function RefreshSignalsButton() {
         if (prev.size > 0) return prev;
         return new Map([
           ['__error__', {
-            workflow: '__error__',
-            name: 'Network error',
+            workflow:     '__error__',
+            name:         'Network error',
             dispatchedAt: new Date().toISOString(),
-            runState: 'failed',
+            runState:     'failed',
             dispatchError: String(e),
           }],
         ]);
@@ -162,7 +206,6 @@ export function RefreshSignalsButton() {
   const terminalCount = all.filter((w) => TERMINAL.has(w.runState)).length;
   const totalCount = all.length;
 
-  // Overall label
   let mainLabel: string;
   if (state === 'amber') {
     mainLabel = streaming
@@ -240,32 +283,23 @@ function WorkflowRow({ entry, borderBottom }: { entry: WorkflowEntry; borderBott
   const isActive = runState === 'queued' || runState === 'running';
 
   const dotClass =
-    runState === 'completed'
-      ? 'bg-green-400'
-      : runState === 'failed'
-      ? 'bg-red-400'
-      : 'bg-amber-400 animate-pulse';
+    runState === 'completed' ? 'bg-green-400' :
+    runState === 'failed'    ? 'bg-red-400' :
+                               'bg-amber-400 animate-pulse';
 
   const labelClass =
-    runState === 'completed'
-      ? 'text-green-400/70'
-      : runState === 'failed'
-      ? 'text-red-400/70'
-      : 'text-amber-400/70';
+    runState === 'completed' ? 'text-green-400/70' :
+    runState === 'failed'    ? 'text-red-400/70' :
+                               'text-amber-400/70';
 
-  // Prefer real step-based percentage; fall back to indeterminate bar
   const hasPct = isActive && stepsTotal != null && stepsTotal > 0;
   const pct = hasPct ? Math.round(((stepsDone ?? 0) / stepsTotal!) * 100) : null;
 
-  const label = dispatchError
-    ? 'dispatch failed'
-    : runState === 'queued'
-    ? 'queued'
-    : runState === 'running'
-    ? pct != null ? `${pct}%` : 'running'
-    : runState === 'completed'
-    ? 'done'
-    : 'failed';
+  const label = dispatchError  ? 'dispatch failed' :
+    runState === 'queued'      ? 'queued' :
+    runState === 'running'     ? (pct != null ? `${pct}%` : 'running') :
+    runState === 'completed'   ? 'done' :
+                                 'failed';
 
   return (
     <div className={`px-3 py-1.5 bg-white/[0.02] ${borderBottom ? 'border-b border-white/5' : ''}`}>
@@ -277,13 +311,11 @@ function WorkflowRow({ entry, borderBottom }: { entry: WorkflowEntry; borderBott
       {isActive && (
         <div className="mt-1 ml-3.5 h-px rounded-full bg-white/10 overflow-hidden">
           {pct != null ? (
-            // Determinate bar when we have real step data
             <div
               className="h-full rounded-full bg-amber-400/60 transition-all duration-500"
               style={{ width: `${pct}%` }}
             />
           ) : (
-            // Indeterminate sweep while queued or before steps load
             <div
               className="h-full w-2/5 rounded-full bg-amber-400/50"
               style={{ animation: 'indeterminate 1.5s ease-in-out infinite' }}

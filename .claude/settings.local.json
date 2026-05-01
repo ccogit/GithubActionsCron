@@ -45,7 +45,10 @@
       "Bash(python3 -m py_compile worker/refresh_technical_signals.py worker/refresh_economic_indicators.py)",
       "Bash(python *)",
       "Bash(python3 *)",
-      "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")"
+      "Bash(grep -E \"\\\\.\\(tsx|ts\\)$\")",
+      "Bash(gh workflow *)",
+      "PowerShell(gh workflow *)",
+      "Bash(git rm *)"
     ]
   }
 }
