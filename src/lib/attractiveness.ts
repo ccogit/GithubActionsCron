@@ -515,11 +515,11 @@ export function computeAttractiveness(s: AttractivenessSignals): AttractivenessR
       value: "N/A",
       contribution: 0,
       description: "No options flow data available",
-    }
-    }
+    });
+  }
 
-    // 13. Signal A: Analyst Estimate Revisions
-    if (s.rev_ratio != null) {
+  // 13. Signal A: Analyst Estimate Revisions
+  if (s.rev_ratio != null) {
     if (s.rev_ratio >= 0.7) {
       score += 1; count++;
       reasons.push("bullish analyst revisions");
@@ -546,10 +546,10 @@ export function computeAttractiveness(s: AttractivenessSignals): AttractivenessR
         description: "Mixed or neutral earnings revisions",
       });
     }
-    }
+  }
 
-    // 14. Signal C: Relative Strength (Momentum Leader)
-    if (s.rs_3m != null) {
+  // 14. Signal C: Relative Strength (Momentum Leader)
+  if (s.rs_3m != null) {
     if (s.rs_3m > 10) {
       score += 1; count++;
       reasons.push("momentum leader");
@@ -576,10 +576,10 @@ export function computeAttractiveness(s: AttractivenessSignals): AttractivenessR
         description: "Performance in line with benchmark",
       });
     }
-    }
+  }
 
-    // 15. Signal D: Institutional Ownership
-    if (s.inst_pct != null) {
+  // 15. Signal D: Institutional Ownership
+  if (s.inst_pct != null) {
     if (s.inst_pct >= 0.75) {
       score += 1; count++;
       reasons.push("high institutional conviction");
@@ -598,10 +598,10 @@ export function computeAttractiveness(s: AttractivenessSignals): AttractivenessR
         description: "Low institutional support",
       });
     }
-    }
+  }
 
-    // 16. Macro Dampener B: Market Breadth
-    if (s.breadth_50 != null && s.breadth_50 < 0.3) {
+  // 16. Macro Dampener B: Market Breadth
+  if (s.breadth_50 != null && s.breadth_50 < 0.3) {
     score -= 1; count++;
     reasons.push("weak market breadth");
     signals.push({
@@ -610,10 +610,10 @@ export function computeAttractiveness(s: AttractivenessSignals): AttractivenessR
       contribution: -1,
       description: "Fragile market rally (few stocks participating)",
     });
-    }
+  }
 
-    // 17. Macro Dampener E: VIX (Extreme Fear)
-    if (s.vix != null && s.vix > 30) {
+  // 17. Macro Dampener E: VIX (Extreme Fear)
+  if (s.vix != null && s.vix > 30) {
     score -= 1; count++;
     reasons.push("extreme market fear");
     signals.push({
@@ -622,10 +622,10 @@ export function computeAttractiveness(s: AttractivenessSignals): AttractivenessR
       contribution: -1,
       description: "High market volatility dampens attractiveness",
     });
-    }
+  }
 
-    // 18. Macro context (Fed rate + unemployment)
-    if (s.fed_rate != null) {
+  // 18. Macro context (Fed rate + unemployment)
+  if (s.fed_rate != null) {
     if (s.fed_rate >= 5) {
       score -= 1; count++;
       reasons.push("high interest rates");
